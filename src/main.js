@@ -15,26 +15,31 @@ const gridHelper = new THREE.GridHelper(tamanhoDaCidade, divisoes, 0x00ff00, 0x2
 scene.add(gridHelper);
 
 // ==========================================
-// 6. ADICIONANDO ELEMENTOS DA CIDADE (TESTE)
+// 6. ADICIONANDO ELEMENTOS DA CIDADE (CORRIGIDO)
 // ==========================================
 
-// Criando o Prédio da Usina Central (Um cubo)
-const geometriaUsina = new THREE.BoxGeometry(2, 4, 2); // Largura, Altura, Profundidade
+// Criando o Prédio da Usina Central (Com propriedade EMISSIVA para brilhar)
+const geometriaUsina = new THREE.BoxGeometry(2, 4, 2); 
 const materialUsina = new THREE.MeshStandardMaterial({ 
-    color: 0x00aaff, // Azul claro elétrico
-    roughness: 0.2 
+    color: 0x0055aa,         // Cor base quando iluminado de fora
+    emissive: 0x00aaff,      // COR DO BRILHO INTERNO (Azul elétrico neon)
+    emissiveIntensity: 1.5,  // Intensidade do brilho próprio da usina
+    roughness: 0.1 
 });
 const usinaCentral = new THREE.Mesh(geometriaUsina, materialUsina);
-
-// Posiciona a usina bem no centro do mapa, apoiada sobre a grade
 usinaCentral.position.set(0, 2, 0); 
 scene.add(usinaCentral);
 
-// Criando a Iluminação do Cenário (Essencial para materiais Standard)
-const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.6); // Luz geral suave
+// LUZ DA USINA: Uma lâmpada forte bem no topo dela para iluminar o chão em volta
+const luzDaUsina = new THREE.PointLight(0x00aaff, 5, 15); // Cor, Intensidade, Distância do alcance
+luzDaUsina.position.set(0, 4, 0); // Posicionada no topo do prédio azul
+scene.add(luzDaUsina);
+
+// Iluminação Geral do Ambiente (Deixamos um pouco mais escura para o brilho destacar)
+const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.2); // Diminuída de 0.6 para 0.2
 scene.add(luzAmbiente);
 
-const luzDirecional = new THREE.DirectionalLight(0xffffff, 1.0); // Luz estilo "Sol" para criar sombras
+const luzDirecional = new THREE.DirectionalLight(0xffffff, 0.5); // Sol mais fraco para contrastar
 luzDirecional.position.set(10, 20, 10);
 scene.add(luzDirecional);
 
