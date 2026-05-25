@@ -36,10 +36,10 @@ luzDaUsina.position.set(0, 4, 0); // Posicionada no topo do prédio azul
 scene.add(luzDaUsina);
 
 // Iluminação Geral do Ambiente (Deixamos um pouco mais escura para o brilho destacar)
-const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.2); // Diminuída de 0.6 para 0.2
+const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.4); // Diminuída de 0.6 para 0.2
 scene.add(luzAmbiente);
 
-const luzDirecional = new THREE.DirectionalLight(0xffffff, 0.5); // Sol mais fraco para contrastar
+const luzDirecional = new THREE.DirectionalLight(0xffffff, 1.0); // Sol mais fraco para contrastar
 luzDirecional.position.set(10, 20, 10);
 scene.add(luzDirecional);
 
@@ -52,8 +52,9 @@ function criarCasa(x, z) {
     // Corpo da casa (Cubo Grafite)
     const geoCorpo = new THREE.BoxGeometry(1, 1, 1);
     const matCorpo = new THREE.MeshStandardMaterial({ 
-        color: 0x1a1a1a,
-        roughness: 0.2
+        color: 0x555555, // Cinza metálico
+        roughness: 0.3,
+        metalness: 0.8
     });
     const corpo = new THREE.Mesh(geoCorpo, matCorpo);
     
