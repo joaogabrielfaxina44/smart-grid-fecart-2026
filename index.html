@@ -2,19 +2,103 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Smart Grid - FECART 2026</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; }
-        canvas { display: block; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Grid — FECART 2026</title>
+    <meta name="description" content="Simulação interativa de Smart Grid com Inteligência Artificial — FECART 2026">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/styles.css">
 </head>
 <body>
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- ========== TOP BAR ========== -->
+    <header id="top-bar">
+        <div id="top-left">
+            <span id="system-logo">⚡</span>
+            <div>
+                <h1 id="system-title">SMART GRID</h1>
+                <span id="system-subtitle">FECART 2026 — Rede Inteligente com IA</span>
+            </div>
+        </div>
+        <div id="clock-container">
+            <span id="clock-label">HORA VIRTUAL</span>
+            <span id="clock-display">00:00</span>
+        </div>
+    </header>
+
+    <!-- ========== LEFT PANEL — Status & Controls ========== -->
+    <aside id="panel-left">
+        <div class="panel-section">
+            <h3 class="section-title">STATUS DA REDE</h3>
+            <div id="ai-status" class="ai-status normal">🟢 REDE ESTÁVEL</div>
+        </div>
+
+        <div class="panel-section">
+            <label class="bar-label-title">Carga da Usina</label>
+            <div class="progress-bar">
+                <div id="usina-capacity-fill" class="bar-fill"></div>
+            </div>
+            <span id="usina-capacity-text" class="bar-value">0 / 500 kW</span>
+        </div>
+
+        <div class="panel-section">
+            <label class="bar-label-title">Geração Solar</label>
+            <div class="progress-bar solar-track">
+                <div id="solar-fill" class="bar-fill solar"></div>
+            </div>
+            <span id="solar-text" class="bar-value">0 kW (0%)</span>
+        </div>
+
+        <div class="panel-section">
+            <label class="bar-label-title">Bateria de Reserva</label>
+            <div class="progress-bar">
+                <div id="battery-fill" class="bar-fill battery"></div>
+            </div>
+            <span id="battery-text" class="bar-value">100 / 200 kWh</span>
+        </div>
+
+        <div class="panel-divider"></div>
+
+        <div class="panel-section">
+            <h3 class="section-title">PAINEL DE CONTROLE</h3>
+            <button id="btn-sobrecarga" class="control-btn">🔴 Simular Sobrecarga</button>
+            <button id="btn-solar" class="control-btn">☀️ Pico Solar</button>
+            <button id="btn-noite" class="control-btn">🌙 Forçar Noite</button>
+            <button id="btn-falha" class="control-btn">⚡ Falha na Usina</button>
+            <button id="btn-reset" class="control-btn reset">🔄 Resetar Tudo</button>
+        </div>
+
+        <div class="panel-section">
+            <label class="bar-label-title">Velocidade: <span id="speed-value">1.0x</span></label>
+            <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1" class="slider">
+        </div>
+    </aside>
+
+    <!-- ========== BOTTOM PANEL — Node Cards ========== -->
+    <div id="panel-bottom">
+        <div id="nodes-container"></div>
+    </div>
+
+    <!-- ========== DETAIL PANEL (hidden) ========== -->
+    <div id="panel-detail"></div>
+
+    <!-- ========== EVENT LOG ========== -->
+    <div id="event-log">
+        <h4 class="log-title">📋 LOG DE EVENTOS DA IA</h4>
+        <div id="log-entries"></div>
+    </div>
+
+    <!-- ========== THREE.JS IMPORT MAP & SCRIPT ========== -->
     <script type="importmap">
-      {
+    {
         "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
-      }
+    }
     </script>
     <script type="module" src="src/main.js"></script>
 </body>
