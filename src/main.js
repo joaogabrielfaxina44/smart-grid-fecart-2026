@@ -49,14 +49,21 @@ scene.add(luzDirecional);
 
 // Criando uma função para gerar casas em posições diferentes
 function criarCasa(x, z) {
-    // Corpo da casa (Cubo Vermelho)
+    // Corpo da casa (Cubo Grafite)
     const geoCorpo = new THREE.BoxGeometry(1, 1, 1);
-    const matCorpo = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+    const matCorpo = new THREE.MeshStandardMaterial({ 
+        color: 0x1a1a1a,
+        roughness: 0.2
+    });
     const corpo = new THREE.Mesh(geoCorpo, matCorpo);
     
-    // Telhado da casa (Cone Amarelo)
+    // Telhado da casa (Painel Solar Emissivo)
     const geoTelhado = new THREE.ConeGeometry(0.8, 0.6, 4);
-    const matTelhado = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+    const matTelhado = new THREE.MeshStandardMaterial({ 
+        color: 0x002244,
+        emissive: 0xff5500,
+        emissiveIntensity: 1.2
+    });
     const telhado = new THREE.Mesh(geoTelhado, matTelhado);
     
     // Posiciona o telhado em cima do corpo da casa
