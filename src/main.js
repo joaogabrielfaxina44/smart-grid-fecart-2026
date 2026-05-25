@@ -43,6 +43,38 @@ const luzDirecional = new THREE.DirectionalLight(0xffffff, 0.5); // Sol mais fra
 luzDirecional.position.set(10, 20, 10);
 scene.add(luzDirecional);
 
+// ==========================================
+// 7. ESPALHANDO CASAS PELA CIDADE (TESTE)
+// ==========================================
+
+// Criando uma função para gerar casas em posições diferentes
+function criarCasa(x, z) {
+    // Corpo da casa (Cubo Vermelho)
+    const geoCorpo = new THREE.BoxGeometry(1, 1, 1);
+    const matCorpo = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+    const corpo = new THREE.Mesh(geoCorpo, matCorpo);
+    
+    // Telhado da casa (Cone Amarelo)
+    const geoTelhado = new THREE.ConeGeometry(0.8, 0.6, 4);
+    const matTelhado = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+    const telhado = new THREE.Mesh(geoTelhado, matTelhado);
+    
+    // Posiciona o telhado em cima do corpo da casa
+    telhado.position.y = 0.8;
+    telhado.rotation.y = Math.PI / 4; // Gira o cone para alinhar com o cubo
+    corpo.add(telhado);
+
+    // Posiciona a casa inteira no chão (eixo X e Z)
+    corpo.position.set(x, 0.5, z);
+    scene.add(corpo);
+}
+
+// Agora escolhemos as coordenadas para brotar 4 casas no mapa
+criarCasa(5, 5);
+criarCasa(-5, 5);
+criarCasa(5, -5);
+criarCasa(-5, -5);
+
 function animate() {
     requestAnimationFrame(animate);
     gridHelper.rotation.y += 0.001;
