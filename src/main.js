@@ -35,49 +35,49 @@ const luzDaUsina = new THREE.PointLight(0x00aaff, 5, 15); // Cor, Intensidade, D
 luzDaUsina.position.set(0, 4, 0); // Posicionada no topo do prédio azul
 scene.add(luzDaUsina);
 
-// Iluminação Geral do Ambiente (Deixamos um pouco mais escura para o brilho destacar)
-const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.4); // Diminuída de 0.6 para 0.2
+// ==========================================
+// AJUSTE DAS LUZES PARA MOSTRAR OS VALORES
+// ==========================================
+const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.6); // Luz geral para clarear os blocos cinzas
 scene.add(luzAmbiente);
 
-const luzDirecional = new THREE.DirectionalLight(0xffffff, 1.0); // Sol mais fraco para contrastar
-luzDirecional.position.set(10, 20, 10);
+const luzDirecional = new THREE.DirectionalLight(0xffffff, 1.5); // Sol forte batendo de cima
+luzDirecional.position.set(15, 25, 15);
 scene.add(luzDirecional);
 
 // ==========================================
-// 7. ESPALHANDO CASAS PELA CIDADE (TESTE)
+// 7. CORREÇÃO DEFINITIVA DAS CASAS
 // ==========================================
 
-// Criando uma função para gerar casas em posições diferentes
 function criarCasa(x, z) {
-    // Corpo da casa (Cubo Grafite)
+    // Corpo da casa: mudamos para uma cor cinza claro/prata futurista (0xa0a0a0)
+    // Aumentamos o metalness para 0.9 para brilhar com a luz direcional
     const geoCorpo = new THREE.BoxGeometry(1, 1, 1);
     const matCorpo = new THREE.MeshStandardMaterial({ 
-        color: 0x555555, // Cinza metálico
-        roughness: 0.3,
-        metalness: 0.8
+        color: 0xa0a0a0, 
+        roughness: 0.1,
+        metalness: 0.9
     });
     const corpo = new THREE.Mesh(geoCorpo, matCorpo);
     
-    // Telhado da casa (Painel Solar Emissivo)
+    // Telhado (Mantemos o seu laranja neon maravilhoso)
     const geoTelhado = new THREE.ConeGeometry(0.8, 0.6, 4);
     const matTelhado = new THREE.MeshStandardMaterial({ 
         color: 0x002244,
         emissive: 0xff5500,
-        emissiveIntensity: 1.2
+        emissiveIntensity: 1.5
     });
     const telhado = new THREE.Mesh(geoTelhado, matTelhado);
     
-    // Posiciona o telhado em cima do corpo da casa
     telhado.position.y = 0.8;
-    telhado.rotation.y = Math.PI / 4; // Gira o cone para alinhar com o cubo
+    telhado.rotation.y = Math.PI / 4;
     corpo.add(telhado);
 
-    // Posiciona a casa inteira no chão (eixo X e Z)
     corpo.position.set(x, 0.5, z);
     scene.add(corpo);
 }
 
-// Agora escolhemos as coordenadas para brotar 4 casas no mapa
+// Chamar as casas nas posições
 criarCasa(5, 5);
 criarCasa(-5, 5);
 criarCasa(5, -5);
