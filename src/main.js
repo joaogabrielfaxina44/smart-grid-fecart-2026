@@ -136,11 +136,17 @@ const detailMats = {
 };
 
 const powerMats = {
-    pole: new THREE.MeshStandardMaterial({ color: 0x5a5550, roughness: 0.9 }),
-    wireNormal: new THREE.LineBasicMaterial({ color: 0x222222, linewidth: 1 }),
-    wireGlowing: new THREE.LineBasicMaterial({ color: 0x4aa3df, transparent: true, opacity: 0.8, linewidth: 2 }), // Underground / active
-    wireOverload: new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.9, linewidth: 2 }), // Overload
-    wireBlackout: new THREE.LineBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.3, linewidth: 1 }), // Dead
+    pole: new THREE.MeshStandardMaterial({ color: 0x4a443d, roughness: 0.88 }),
+    woodPole: new THREE.MeshStandardMaterial({ color: 0x584b3e, roughness: 0.85 }),
+    metalArm: new THREE.MeshStandardMaterial({ color: 0x3d4146, roughness: 0.5, metalness: 0.4 }),
+    insulator: new THREE.MeshStandardMaterial({ color: 0x3b8b88, roughness: 0.25, metalness: 0.2 }),
+    transformer: new THREE.MeshStandardMaterial({ color: 0x32373d, roughness: 0.4, metalness: 0.5 }),
+    streetLamp: new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5 }),
+    lampBulb: new THREE.MeshBasicMaterial({ color: 0xffeaad }),
+    wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
+    wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }), // Underground / active
+    wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }), // Overload
+    wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }), // Dead
 };
 
 function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
@@ -934,7 +940,122 @@ function createTrafficHints() {
 const powerGridObjects = [];
 let powerState = 'normal';
 
+// Helper function to create a realistic utility pole with cross-arm, insulators, transformer & street lamp
+function createDetailedUtilityPole(group, x, z, angleRad = 0, opts = {}) {
+    const { hasTransformer = false, hasStreetlight = true } = opts;
+    const poleGroup = new THREE.Group();
+    poleGroup.position.set(x, 0, z);
+    poleGroup.rotation.y = angleRad;
+
+    // Metal Base Plate
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.2, 8), detailMats.entranceFrame);
+    base.position.y = 0.1;
+    poleGroup.add(base);
+
+    // Tapered Wooden/Concrete Main Shaft
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 5.0, 10), powerMats.woodPole);
+    shaft.position.y = 2.6;
+    shaft.castShadow = true;
+    poleGroup.add(shaft);
+
+    // Cross-arm (Cruzeta)
+    const crossArm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.12), powerMats.woodPole);
+    crossArm.position.set(0, 4.75, 0);
+    crossArm.castShadow = true;
+    poleGroup.add(crossArm);
+
+    // Diagonal Metal Support Braces
+    const brace1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04), powerMats.metalArm);
+    brace1.position.set(-0.35, 4.42, 0);
+    brace1.rotation.z = Math.PI / 4;
+    poleGroup.add(brace1);
+
+    const brace2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04), powerMats.metalArm);
+    brace2.position.set(0.35, 4.42, 0);
+    brace2.rotation.z = -Math.PI / 4;
+    poleGroup.add(brace2);
+
+    // 3 Ceramic Insulators on top of cross-arm
+    const insulatorOffsets = [-0.65, 0, 0.65];
+    const insulatorWorldPositions = [];
+    insulatorOffsets.forEach(offX => {
+        const ins = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.22, 8), powerMats.insulator);
+        ins.position.set(offX, 4.91, 0);
+        poleGroup.add(ins);
+
+        // Calculate world position for wire connection
+        const pt = new THREE.Vector3(offX, 5.02, 0);
+        pt.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
+        pt.add(new THREE.Vector3(x, 0, z));
+        insulatorWorldPositions.push(pt);
+    });
+
+    // Optional Transformer Drum
+    if (hasTransformer) {
+        const trans = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.7, 10), powerMats.transformer);
+        trans.position.set(0.3, 3.6, 0);
+        trans.castShadow = true;
+        poleGroup.add(trans);
+
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.1), powerMats.metalArm);
+        bracket.position.set(0.16, 3.6, 0);
+        poleGroup.add(bracket);
+    }
+
+    // Street Lamp Fixture facing the road
+    if (hasStreetlight) {
+        const lampArm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.3, 6), powerMats.metalArm);
+        lampArm.position.set(0, 4.35, 0.55);
+        lampArm.rotation.x = Math.PI / 3;
+        poleGroup.add(lampArm);
+
+        const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.4), powerMats.streetLamp);
+        lampHead.position.set(0, 4.65, 1.15);
+        poleGroup.add(lampHead);
+
+        const bulbMat = new THREE.MeshStandardMaterial({ color: 0xffeaad, roughness: 0.3, emissive: 0x000000 });
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), bulbMat);
+        bulb.position.set(0, 4.58, 1.2);
+        bulb.name = "streetLampBulb";
+        poleGroup.add(bulb);
+    }
+
+    group.add(poleGroup);
+    return insulatorWorldPositions;
+}
+
+// Helper to create catenary sagging wires between 2 insulator arrays
+function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat, overloadMat, sagAmount = 0.35) {
+    const wireLines = [];
+    const count = Math.min(posArray1.length, posArray2.length);
+    for (let k = 0; k < count; k++) {
+        const p1 = posArray1[k];
+        const p2 = posArray2[k];
+
+        const points = [];
+        const segments = 10;
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
+            const z = THREE.MathUtils.lerp(p1.z, p2.z, t);
+            const yLinear = THREE.MathUtils.lerp(p1.y, p2.y, t);
+            const sag = 4 * sagAmount * t * (1 - t);
+            points.push(new THREE.Vector3(x, yLinear - sag, z));
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, wireMaterial);
+        line.userData = { originalMat: wireMaterial, blackoutMat, overloadMat };
+        group.add(line);
+        wireLines.push(line);
+    }
+    return wireLines;
+}
+
 function createPowerGrid() {
+    // Stores pole insulator positions per block to link across adjacent blocks
+    const blockPolesMap = new Map();
+
     for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let col = 0; col < GRID_SIZE; col += 1) {
             const type = getBlockType(row, col);
@@ -948,7 +1069,7 @@ function createPowerGrid() {
             powerGridObjects.push(group);
 
             if (type === 'commercial' || type === 'hospital' || type === 'mixed') {
-                // Underground glowing lines
+                // Underground glowing lines following street layout
                 const lineGeo = new THREE.BufferGeometry().setFromPoints([
                     new THREE.Vector3(bx - 8.5, 0.22, bz - 8.5),
                     new THREE.Vector3(bx + 8.5, 0.22, bz - 8.5),
@@ -960,7 +1081,6 @@ function createPowerGrid() {
                 line.userData = { originalMat: powerMats.wireGlowing, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
                 group.add(line);
                 
-                // Cross lines
                 if (noise(row, col, 800) > 0.4) {
                     const crossGeo = new THREE.BufferGeometry().setFromPoints([
                         new THREE.Vector3(bx - 8.5, 0.22, bz),
@@ -971,28 +1091,24 @@ function createPowerGrid() {
                     group.add(cross);
                 }
             } else {
-                // Overhead lines and poles
-                const polePositions = [
-                    [-8.2, -8.2], [8.2, -8.2], [8.2, 8.2], [-8.2, 8.2]
-                ];
-                const points = [];
-                polePositions.forEach(([px, pz]) => {
-                    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 4.5, 6), powerMats.pole);
-                    pole.position.set(bx + px, 2.25, bz + pz);
-                    pole.castShadow = true;
-                    group.add(pole);
-                    
-                    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.1, 0.1), powerMats.pole);
-                    arm.position.set(bx + px, 4.3, bz + pz);
-                    group.add(arm);
-                    
-                    points.push(new THREE.Vector3(bx + px, 4.3, bz + pz));
-                });
-                points.push(points[0]); 
-                const wireGeo = new THREE.BufferGeometry().setFromPoints(points);
-                const wire = new THREE.Line(wireGeo, powerMats.wireNormal);
-                wire.userData = { originalMat: powerMats.wireNormal, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
-                group.add(wire);
+                // Overhead Lines: Elegant continuous street poles along East-West sidewalk
+                const hasTrans = noise(row, col, 801) > 0.5;
+                
+                // Place 2 poles per block along sidewalk corridor facing street (z = bz + 8.2)
+                const p1Pos = createDetailedUtilityPole(group, bx - 4.5, bz + 8.2, 0, { hasTransformer: false, hasStreetlight: true });
+                const p2Pos = createDetailedUtilityPole(group, bx + 4.5, bz + 8.2, 0, { hasTransformer: hasTrans, hasStreetlight: true });
+
+                // Connect P1 to P2 within the block with 3 sagging catenary power lines
+                addCatenaryWires(group, p1Pos, p2Pos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.3);
+
+                // Store P2 position so adjacent block can connect
+                blockPolesMap.set(`${row}-${col}`, { p1Pos, p2Pos });
+
+                // Connect to previous adjacent block (col - 1) if it also has overhead poles
+                const prev = blockPolesMap.get(`${row}-${col - 1}`);
+                if (prev) {
+                    addCatenaryWires(group, prev.p2Pos, p1Pos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.4);
+                }
             }
         }
     }
@@ -1041,6 +1157,13 @@ function triggerBlackout(targetGroup) {
     if (!targetGroup.userData.active) return;
     targetGroup.userData.active = false;
     setWireMaterial(targetGroup, 'blackoutMat');
+    
+    // Turn off street lamp bulbs in this block
+    targetGroup.traverse(child => {
+        if (child.name === "streetLampBulb" && child.material) {
+            child.material.emissive.setHex(0x000000);
+        }
+    });
 }
 
 function simulateOverload() {
@@ -1080,6 +1203,17 @@ function forceNight() {
     scene.background.setHex(0x0a1020);
     scene.fog.color.setHex(0x0a1020);
     
+    // Turn on street lamp bulbs glowing warm gold
+    powerGridObjects.forEach(group => {
+        if (group.userData.active) {
+            group.traverse(child => {
+                if (child.name === "streetLampBulb" && child.material) {
+                    child.material.emissive.setHex(0xffaa22);
+                }
+            });
+        }
+    });
+
     cityGroup.traverse(child => {
         if (child.isMesh && child.material && child.material.length) {
             child.material.forEach(mat => {
@@ -1134,6 +1268,11 @@ function resetCity() {
     powerGridObjects.forEach(group => {
         group.userData.active = true;
         setWireMaterial(group, 'originalMat');
+        group.traverse(child => {
+            if (child.name === "streetLampBulb" && child.material) {
+                child.material.emissive.setHex(0x000000);
+            }
+        });
     });
     
     if (sceneLightState === 'night') {
