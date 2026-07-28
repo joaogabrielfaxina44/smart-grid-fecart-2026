@@ -619,6 +619,34 @@ initializeScene();
 
 function animate() {
     requestAnimationFrame(animate);
+
+    // Ajuste dinâmico da câmera e ambientação baseado na distância (proximidade)
+    if (controls && scene.fog) {
+        const distance = controls.getDistance();
+        // Normaliza a distância entre 0 (mais perto) e 1 (mais longe)
+        const t = Math.max(0, Math.min(1, (distance - controls.minDistance) / (controls.maxDistance - controls.minDistance)));
+
+        // 1. Câmera: Movimentos mais suaves e precisos quando perto, mais rápidos quando longe
+        controls.rotateSpeed = 0.15 + (t * 0.65); // 0.15 perto, 0.8 longe
+        controls.panSpeed = 0.2 + (t * 0.8);      // 0.2 perto, 1.0 longe
+        controls.zoomSpeed = 0.4 + (t * 0.6);     // 0.4 perto, 1.0 longe
+
+        // 2. Ambientação (Neblina): 
+        // Quando perto (nível da rua), a neblina começa mais cedo para dar noção de escala e profundidade
+        // Quando longe (vista aérea), a neblina se afasta para permitir a visão geral da cidade
+        scene.fog.near = 80 + (t * 240);  // de 80 até 320
+        scene.fog.far = 280 + (t * 580);  // de 280 até 860
+        
+        // Ajuste sutil na cor da neblina/fundo simulando dispersão atmosférica (mais denso quando perto)
+        // Cor base (longe): 0xbfd3e6 (191, 211, 230)
+        // Cor densa (perto): 0xa6c2da (166, 194, 218)
+        const r = 166 + t * (191 - 166);
+        const g = 194 + t * (211 - 194);
+        const b = 218 + t * (230 - 218);
+        scene.background.setRGB(r / 255, g / 255, b / 255);
+        scene.fog.color.setRGB(r / 255, g / 255, b / 255);
+    }
+
     controls.update();
     renderer.render(scene, camera);
 }
