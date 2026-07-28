@@ -135,6 +135,14 @@ const detailMats = {
     chimneyCap: new THREE.MeshStandardMaterial({ color: 0x8a6650, roughness: 0.85 }),
 };
 
+const powerMats = {
+    pole: new THREE.MeshStandardMaterial({ color: 0x5a5550, roughness: 0.9 }),
+    wireNormal: new THREE.LineBasicMaterial({ color: 0x222222, linewidth: 1 }),
+    wireGlowing: new THREE.LineBasicMaterial({ color: 0x4aa3df, transparent: true, opacity: 0.8, linewidth: 2 }), // Underground / active
+    wireOverload: new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.9, linewidth: 2 }), // Overload
+    wireBlackout: new THREE.LineBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.3, linewidth: 1 }), // Dead
+};
+
 function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
     const { type = 'office', hasEntrance = false, hasShopFront = false } = opts;
     const ppu = 16;
@@ -921,6 +929,257 @@ function createTrafficHints() {
     }
 }
 
+// ── Smart Grid Power Infrastructure & UI Logic ──────────
+
+const powerGridObjects = [];
+let powerState = 'normal';
+
+function createPowerGrid() {
+    for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let col = 0; col < GRID_SIZE; col += 1) {
+            const type = getBlockType(row, col);
+            const bx = BLOCK_CENTERS[col];
+            const bz = BLOCK_CENTERS[row];
+            
+            const group = new THREE.Group();
+            group.name = `powergrid-${row}-${col}`;
+            group.userData = { isGridNode: true, row, col, type, active: true };
+            cityGroup.add(group);
+            powerGridObjects.push(group);
+
+            if (type === 'commercial' || type === 'hospital' || type === 'mixed') {
+                // Underground glowing lines
+                const lineGeo = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(bx - 8.5, 0.22, bz - 8.5),
+                    new THREE.Vector3(bx + 8.5, 0.22, bz - 8.5),
+                    new THREE.Vector3(bx + 8.5, 0.22, bz + 8.5),
+                    new THREE.Vector3(bx - 8.5, 0.22, bz + 8.5),
+                    new THREE.Vector3(bx - 8.5, 0.22, bz - 8.5)
+                ]);
+                const line = new THREE.Line(lineGeo, powerMats.wireGlowing);
+                line.userData = { originalMat: powerMats.wireGlowing, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
+                group.add(line);
+                
+                // Cross lines
+                if (noise(row, col, 800) > 0.4) {
+                    const crossGeo = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(bx - 8.5, 0.22, bz),
+                        new THREE.Vector3(bx + 8.5, 0.22, bz)
+                    ]);
+                    const cross = new THREE.Line(crossGeo, powerMats.wireGlowing);
+                    cross.userData = { originalMat: powerMats.wireGlowing, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
+                    group.add(cross);
+                }
+            } else {
+                // Overhead lines and poles
+                const polePositions = [
+                    [-8.2, -8.2], [8.2, -8.2], [8.2, 8.2], [-8.2, 8.2]
+                ];
+                const points = [];
+                polePositions.forEach(([px, pz]) => {
+                    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 4.5, 6), powerMats.pole);
+                    pole.position.set(bx + px, 2.25, bz + pz);
+                    pole.castShadow = true;
+                    group.add(pole);
+                    
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.1, 0.1), powerMats.pole);
+                    arm.position.set(bx + px, 4.3, bz + pz);
+                    group.add(arm);
+                    
+                    points.push(new THREE.Vector3(bx + px, 4.3, bz + pz));
+                });
+                points.push(points[0]); 
+                const wireGeo = new THREE.BufferGeometry().setFromPoints(points);
+                const wire = new THREE.Line(wireGeo, powerMats.wireNormal);
+                wire.userData = { originalMat: powerMats.wireNormal, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
+                group.add(wire);
+            }
+        }
+    }
+}
+
+const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 1.5; // Make lines easier to click
+const mouse = new THREE.Vector2();
+
+function setupRaycaster() {
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        
+        raycaster.setFromCamera(mouse, camera);
+        
+        const interactables = [];
+        powerGridObjects.forEach(g => {
+            g.children.forEach(c => interactables.push(c));
+        });
+        
+        const intersects = raycaster.intersectObjects(interactables, false);
+        if (intersects.length > 0) {
+            let target = intersects[0].object;
+            while (target.parent && !target.parent.userData.isGridNode) {
+                target = target.parent;
+            }
+            if (target.parent && target.parent.userData.isGridNode) {
+                triggerBlackout(target.parent);
+            }
+        }
+    });
+}
+
+function setWireMaterial(group, matKey) {
+    group.children.forEach(child => {
+        if (child.isLine && child.userData[matKey]) {
+            child.material = child.userData[matKey];
+        }
+    });
+}
+
+function triggerBlackout(targetGroup) {
+    if (!targetGroup.userData.active) return;
+    targetGroup.userData.active = false;
+    setWireMaterial(targetGroup, 'blackoutMat');
+}
+
+function simulateOverload() {
+    powerState = 'overload';
+    powerGridObjects.forEach(group => {
+        if (group.userData.active) setWireMaterial(group, 'overloadMat');
+    });
+}
+
+let sceneLightState = 'day';
+let originalHemiColor, originalHemiGround, originalSunIntensity;
+function forceNight() {
+    if (!originalHemiColor) {
+        const hemi = scene.children.find(c => c.isHemisphereLight);
+        const sun = scene.children.find(c => c.isDirectionalLight);
+        if (hemi && sun) {
+            originalHemiColor = hemi.color.clone();
+            originalHemiGround = hemi.groundColor.clone();
+            originalSunIntensity = sun.intensity;
+        }
+    }
+    
+    sceneLightState = 'night';
+    const hemi = scene.children.find(c => c.isHemisphereLight);
+    const sun = scene.children.find(c => c.isDirectionalLight);
+    
+    if (hemi) {
+        hemi.color.setHex(0x1a2a40);
+        hemi.groundColor.setHex(0x0a101a);
+        hemi.intensity = 0.5;
+    }
+    if (sun) {
+        sun.intensity = 0.05;
+        sun.color.setHex(0x6b80a6);
+    }
+    
+    scene.background.setHex(0x0a1020);
+    scene.fog.color.setHex(0x0a1020);
+    
+    cityGroup.traverse(child => {
+        if (child.isMesh && child.material && child.material.length) {
+            child.material.forEach(mat => {
+                if (mat.map && mat.map.isCanvasTexture && mat.emissive) {
+                    mat.emissive.setHex(0x555544);
+                    mat.emissiveIntensity = 1.0;
+                }
+            });
+        }
+    });
+}
+
+function powerPlantFailure() {
+    powerState = 'blackout';
+    let delay = 0;
+    
+    // Sort from center outwards for a nice cascade effect
+    const sorted = [...powerGridObjects].sort((a, b) => {
+        const d1 = Math.hypot(a.userData.row - GRID_RADIUS, a.userData.col - GRID_RADIUS);
+        const d2 = Math.hypot(b.userData.row - GRID_RADIUS, b.userData.col - GRID_RADIUS);
+        return d1 - d2;
+    });
+
+    sorted.forEach(group => {
+        setTimeout(() => {
+            triggerBlackout(group);
+            // If it's night, turn off building lights in this block
+            if (sceneLightState === 'night') {
+                const bx = BLOCK_CENTERS[group.userData.col];
+                const bz = BLOCK_CENTERS[group.userData.row];
+                cityGroup.children.forEach(c => {
+                    if (c.name.includes(`${group.userData.row * GRID_SIZE + group.userData.col}`)) {
+                        c.traverse(mesh => {
+                            if (mesh.isMesh && mesh.material && mesh.material.length) {
+                                mesh.material.forEach(mat => {
+                                    if (mat.map && mat.map.isCanvasTexture && mat.emissive) {
+                                        mat.emissive.setHex(0x000000);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        }, delay);
+        delay += 30 + Math.random() * 40;
+    });
+}
+
+function resetCity() {
+    powerState = 'normal';
+    powerGridObjects.forEach(group => {
+        group.userData.active = true;
+        setWireMaterial(group, 'originalMat');
+    });
+    
+    if (sceneLightState === 'night') {
+        sceneLightState = 'day';
+        const hemi = scene.children.find(c => c.isHemisphereLight);
+        const sun = scene.children.find(c => c.isDirectionalLight);
+        
+        if (hemi && originalHemiColor) {
+            hemi.color.copy(originalHemiColor);
+            hemi.groundColor.copy(originalHemiGround);
+            hemi.intensity = 1.68;
+        }
+        if (sun && originalSunIntensity !== undefined) {
+            sun.intensity = originalSunIntensity;
+            sun.color.setHex(0xfff3d7);
+        }
+    }
+    
+    cityGroup.traverse(child => {
+        if (child.isMesh && child.material && child.material.length) {
+            child.material.forEach(mat => {
+                if (mat.map && mat.map.isCanvasTexture && mat.emissive) {
+                    mat.emissive.setHex(0x000000);
+                    mat.emissiveIntensity = 1;
+                }
+            });
+        }
+    });
+}
+
+function setupUI() {
+    const toggleBtn = document.getElementById('toggle-panel-btn');
+    const panel = document.getElementById('control-panel');
+    
+    if (toggleBtn && panel) {
+        toggleBtn.addEventListener('click', () => {
+            panel.classList.toggle('hidden');
+        });
+    }
+    
+    document.getElementById('btn-overload')?.addEventListener('click', simulateOverload);
+    document.getElementById('btn-night')?.addEventListener('click', forceNight);
+    document.getElementById('btn-failure')?.addEventListener('click', powerPlantFailure);
+    document.getElementById('btn-reset')?.addEventListener('click', resetCity);
+}
+
 function createLighting() {
     const hemi = new THREE.HemisphereLight(0xdcefff, 0x7c806d, 1.68);
     scene.add(hemi);
@@ -944,6 +1203,8 @@ function initializeScene() {
     createDistricts();
     createTrafficHints();
     createLighting();
+    createPowerGrid();
+    setupRaycaster();
     window.smartCityStats = cityStats;
 }
 
