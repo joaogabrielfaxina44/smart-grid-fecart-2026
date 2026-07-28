@@ -97,6 +97,287 @@ const officeMaterials = [
     new THREE.MeshStandardMaterial({ color: 0x8a8f8e, roughness: 0.62 })
 ];
 
+// ── Facade Texture System & Building Detail Helpers ──────────
+
+const facadeMaterialCache = new Map();
+
+const wallPalettes = {
+    residential: ['#d8c9b0', '#c9c3b4', '#e1d8c8', '#b9c0b5', '#c6ad99', '#d0d2ca', '#bda994', '#c4b8a0', '#ddd5c6', '#e8dcc8'],
+    office: ['#b8bcc0', '#a0a4a8', '#c4c1b7', '#8a8f8e', '#9ea5a8', '#bbb8b0', '#a8b0b4', '#c0c4c8', '#d0ccc4', '#a4aab0'],
+    glass: ['#6a8a9a', '#7a9aaa', '#5a7a8a', '#8aaabc', '#6090a0', '#7888a0', '#5a8898', '#6a98a8'],
+    shop: ['#d8c9b0', '#c4b8a0', '#e1d8c8', '#ddd0bc', '#c9c0b0', '#d0c4b4'],
+    industrial: ['#9c9688', '#a8a298', '#8a8880', '#b0a898', '#948c80', '#a0988c']
+};
+
+const windowDarkColors = ['#1a2838', '#1e2e3e', '#222e3a', '#182434', '#202c38'];
+const windowLitWarm = ['#d4c87a', '#c8bc6a', '#e0d48a', '#ccbe70', '#dcc468'];
+const windowLitCool = ['#a0b8d0', '#90a8c0', '#b0c8e0', '#88a0b8'];
+
+const awningPalette = [
+    new THREE.MeshStandardMaterial({ color: 0x7f3f35, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x2d5a3a, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x3a4a6a, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x6a3a5a, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x8a6a2a, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a2a2a, roughness: 0.68 }),
+    new THREE.MeshStandardMaterial({ color: 0x2a4a4a, roughness: 0.68 }),
+];
+
+const detailMats = {
+    balcony: new THREE.MeshStandardMaterial({ color: 0x8a8a86, roughness: 0.75 }),
+    railing: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5, metalness: 0.3 }),
+    acUnit: new THREE.MeshStandardMaterial({ color: 0xc8c8c4, roughness: 0.5 }),
+    antenna: new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.5, metalness: 0.3 }),
+    waterTank: new THREE.MeshStandardMaterial({ color: 0x6a7a8a, roughness: 0.6, metalness: 0.15 }),
+    ductwork: new THREE.MeshStandardMaterial({ color: 0x8a9090, roughness: 0.55, metalness: 0.2 }),
+    ledge: new THREE.MeshStandardMaterial({ color: 0x9a9a96, roughness: 0.7 }),
+    entranceFrame: new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.5, metalness: 0.15 }),
+    chimneyCap: new THREE.MeshStandardMaterial({ color: 0x8a6650, roughness: 0.85 }),
+};
+
+function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
+    const { type = 'office', hasEntrance = false, hasShopFront = false } = opts;
+    const ppu = 16;
+    const cw = Math.max(16, Math.round(faceW * ppu));
+    const ch = Math.max(16, Math.round(faceH * ppu));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+
+    const pal = wallPalettes[type] || wallPalettes.office;
+    ctx.fillStyle = pal[Math.abs(seed) % pal.length];
+    ctx.fillRect(0, 0, cw, ch);
+
+    // Subtle wall texture noise
+    ctx.globalAlpha = 0.03;
+    for (let i = 0; i < 18; i++) {
+        ctx.fillStyle = noise(seed + i, i, 500) > 0.5 ? '#000' : '#fff';
+        ctx.fillRect(
+            noise(seed + i, i, 501) * cw, noise(i, seed, 502) * ch,
+            3 + noise(seed, i, 503) * 8, 3 + noise(i, seed, 504) * 8
+        );
+    }
+    ctx.globalAlpha = 1;
+
+    // Window parameters by building type
+    let ww, wh, spX, spY;
+    if (type === 'glass') {
+        ww = Math.round((0.9 + noise(seed, 0, 510) * 0.4) * ppu);
+        wh = Math.round((1.2 + noise(seed, 1, 511) * 0.5) * ppu);
+        spX = Math.round((1.1 + noise(seed, 2, 512) * 0.2) * ppu);
+        spY = Math.round((1.5 + noise(seed, 3, 513) * 0.3) * ppu);
+    } else if (type === 'residential') {
+        ww = Math.round((0.4 + noise(seed, 0, 514) * 0.25) * ppu);
+        wh = Math.round((0.5 + noise(seed, 1, 515) * 0.25) * ppu);
+        spX = Math.round((1.2 + noise(seed, 2, 516) * 0.5) * ppu);
+        spY = Math.round((1.2 + noise(seed, 3, 517) * 0.5) * ppu);
+    } else if (type === 'industrial') {
+        ww = Math.round((0.9 + noise(seed, 0, 518) * 0.5) * ppu);
+        wh = Math.round((0.5 + noise(seed, 1, 519) * 0.2) * ppu);
+        spX = Math.round((2.0 + noise(seed, 2, 520) * 0.8) * ppu);
+        spY = Math.round((2.0 + noise(seed, 3, 521) * 0.6) * ppu);
+    } else if (type === 'shop') {
+        ww = Math.round((0.45 + noise(seed, 0, 522) * 0.2) * ppu);
+        wh = Math.round((0.55 + noise(seed, 1, 523) * 0.2) * ppu);
+        spX = Math.round((1.1 + noise(seed, 2, 524) * 0.4) * ppu);
+        spY = Math.round((1.3 + noise(seed, 3, 525) * 0.4) * ppu);
+    } else {
+        ww = Math.round((0.55 + noise(seed, 0, 526) * 0.3) * ppu);
+        wh = Math.round((0.7 + noise(seed, 1, 527) * 0.35) * ppu);
+        spX = Math.round((1.15 + noise(seed, 2, 528) * 0.4) * ppu);
+        spY = Math.round((1.5 + noise(seed, 3, 529) * 0.35) * ppu);
+    }
+
+    const mTop = Math.round(0.4 * ppu);
+    const mBot = hasEntrance || hasShopFront ? Math.round(ch * 0.16) : Math.round(0.25 * ppu);
+    const cols = Math.max(1, Math.floor((cw - ww) / spX));
+    const rows = Math.max(1, Math.floor((ch - mTop - mBot) / spY));
+    const x0 = (cw - (cols - 1) * spX - ww) / 2;
+
+    // Floor separator lines
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    for (let r = 1; r < rows; r++) ctx.fillRect(0, mTop + r * spY - 1, cw, 2);
+
+    // Draw window grid
+    const litChance = type === 'glass' ? 0.3 : 0.15;
+    const litPal = type === 'glass' ? windowLitCool : windowLitWarm;
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if ((hasEntrance || hasShopFront) && r === rows - 1 && Math.abs(c - cols / 2) < 1.2) continue;
+            const wx = x0 + c * spX;
+            const wy = mTop + r * spY;
+            const h = noise(seed + r, c, 530);
+            ctx.fillStyle = h > (1 - litChance)
+                ? litPal[Math.floor(h * 100) % litPal.length]
+                : windowDarkColors[Math.abs(seed + r + c) % windowDarkColors.length];
+            ctx.fillRect(wx, wy, ww, wh);
+            ctx.strokeStyle = type === 'glass' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.16)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(wx, wy, ww, wh);
+            // Cross dividers on some windows
+            if (type !== 'glass' && type !== 'industrial' && noise(seed + c, r, 531) > 0.45) {
+                ctx.beginPath();
+                ctx.moveTo(wx + ww / 2, wy);
+                ctx.lineTo(wx + ww / 2, wy + wh);
+                ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                ctx.stroke();
+            }
+            // Window sill
+            if (type !== 'glass') {
+                ctx.fillStyle = 'rgba(0,0,0,0.07)';
+                ctx.fillRect(wx - 1, wy + wh, ww + 2, 2);
+            }
+        }
+    }
+
+    // Ground floor entrance door
+    if (hasEntrance) {
+        const dw = Math.round(cw * 0.2);
+        const dh = Math.round(ch * 0.12);
+        const dx = Math.round((cw - dw) / 2);
+        const dy = ch - dh;
+        ctx.fillStyle = '#4a4a48';
+        ctx.fillRect(dx - 2, dy - 2, dw + 4, dh + 2);
+        ctx.fillStyle = '#2a1a0a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.fillStyle = 'rgba(100,140,170,0.4)';
+        ctx.fillRect(dx + 2, dy + 2, dw / 2 - 3, dh - 4);
+        ctx.fillRect(dx + dw / 2 + 1, dy + 2, dw / 2 - 3, dh - 4);
+    }
+
+    // Ground floor shop front
+    if (hasShopFront) {
+        const sh = Math.round(ch * 0.14);
+        const sfy = ch - sh;
+        const sfColors = ['#405060', '#504838', '#3a5040', '#504050'];
+        ctx.fillStyle = sfColors[Math.abs(seed) % sfColors.length];
+        ctx.fillRect(2, sfy, cw - 4, sh - 1);
+        ctx.fillStyle = 'rgba(120,160,180,0.45)';
+        ctx.fillRect(6, sfy + 2, cw - 12, sh - 5);
+        const sdw = Math.round((cw - 12) * 0.18);
+        ctx.fillStyle = '#2a1a0a';
+        ctx.fillRect(Math.round(cw / 2 - sdw / 2), sfy + 2, sdw, sh - 4);
+    }
+
+    // Industrial loading door
+    if (type === 'industrial' && noise(seed, 5, 540) > 0.4) {
+        const ldw = Math.round(cw * 0.3);
+        const ldh = Math.round(ch * 0.35);
+        const ldx = Math.round(cw * 0.1);
+        const ldy = ch - ldh;
+        ctx.fillStyle = '#5a5a58';
+        ctx.fillRect(ldx, ldy, ldw, ldh);
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(ldx, ldy, ldw, ldh);
+        for (let ly = ldy + 4; ly < ch; ly += 5) {
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(ldx + 1, ly, ldw - 2, 1);
+        }
+    }
+
+    // Top cornice
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(0, 0, cw, 3);
+
+    // Vertical pilaster accent strips
+    if (noise(seed, 0, 550) > 0.55 && type !== 'glass') {
+        ctx.fillStyle = 'rgba(0,0,0,0.04)';
+        ctx.fillRect(0, 0, 3, ch);
+        ctx.fillRect(cw - 3, 0, 3, ch);
+    }
+
+    return canvas;
+}
+
+function getFacadeMaterial(fw, fh, seed, type, opts = {}) {
+    const qw = Math.round(fw * 2) / 2;
+    const qh = Math.round(fh);
+    const sk = Math.abs(seed) % 47;
+    const key = `${type}_${qw}_${qh}_${sk}_${opts.hasEntrance ? 'e' : ''}_${opts.hasShopFront ? 's' : ''}`;
+    if (facadeMaterialCache.has(key)) return facadeMaterialCache.get(key);
+    const canvas = createFacadeCanvas(fw, fh, seed, { type, ...opts });
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({
+        map: texture,
+        roughness: type === 'glass' ? 0.28 : type === 'residential' ? 0.84 : 0.74,
+        metalness: type === 'glass' ? 0.1 : 0,
+        transparent: type === 'glass',
+        opacity: type === 'glass' ? 0.88 : 1,
+    });
+    facadeMaterialCache.set(key, mat);
+    return mat;
+}
+
+function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent = cityGroup, hasEntrance = false, hasShopFront = false, roofMaterial = null }) {
+    const frontMat = getFacadeMaterial(width, height, seed, type, { hasEntrance, hasShopFront });
+    const backMat = getFacadeMaterial(width, height, seed + 50, type, {});
+    const sideMatL = getFacadeMaterial(depth, height, seed + 100, type, {});
+    const sideMatR = getFacadeMaterial(depth, height, seed + 150, type, {});
+    const topMat = roofMaterial || materials.roofConcrete;
+    const botMat = materials.sidewalk;
+    // BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
+    const mesh = new THREE.Mesh(unitBoxGeometry, [sideMatR, sideMatL, topMat, botMat, frontMat, backMat]);
+    mesh.position.set(x, height / 2, z);
+    mesh.scale.set(width, height, depth);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+}
+
+function addRooftopDetails(parent, x, z, w, d, h, seed) {
+    const n1 = noise(seed, 0, 560);
+    const n2 = noise(seed, 1, 561);
+    const n3 = noise(seed, 2, 562);
+    if (n1 > 0.4) {
+        const tank = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.35 + n1 * 0.25, 0.35 + n1 * 0.25, 0.9, 10),
+            detailMats.waterTank
+        );
+        tank.position.set(x + w * 0.2, h + 0.45, z - d * 0.15);
+        tank.castShadow = true;
+        parent.add(tank);
+    }
+    if (n2 > 0.35) {
+        addBox({ width: 0.9 + n2 * 0.5, height: 0.45, depth: 0.6 + n2 * 0.35, x: x - w * 0.15, y: h + 0.22, z: z + d * 0.1, material: detailMats.acUnit, parent });
+    }
+    if (n3 > 0.55) {
+        addBox({ width: 0.06, height: 1.4 + n3 * 1.0, depth: 0.06, x: x + w * 0.25, y: h + 0.7 + n3 * 0.5, z: z + d * 0.22, material: detailMats.antenna, parent });
+    }
+    if (noise(seed, 3, 563) > 0.6) {
+        addBox({ width: w * 0.4, height: 0.2, depth: 0.25, x, y: h + 0.1, z: z - d * 0.25, material: detailMats.ductwork, parent });
+    }
+}
+
+function addBalconies(parent, x, z, w, d, h, seed, count) {
+    const bw = 1.4 + noise(seed, 0, 570) * 0.7;
+    const bd = 0.45 + noise(seed, 1, 571) * 0.25;
+    const flH = h / Math.max(2, count + 1);
+    for (let i = 1; i <= count; i++) {
+        const by = flH * i;
+        if (noise(seed + i, 0, 572) > 0.35) {
+            addBox({ width: bw, height: 0.07, depth: bd, x, y: by, z: z + d / 2 + bd / 2, material: detailMats.balcony, parent });
+            addBox({ width: bw, height: 0.3, depth: 0.04, x, y: by + 0.15, z: z + d / 2 + bd, material: detailMats.railing, parent, cast: false });
+        }
+        if (noise(seed + i, 1, 573) > 0.6) {
+            addBox({ width: bd, height: 0.07, depth: bw, x: x + w / 2 + bd / 2, y: by, z, material: detailMats.balcony, parent });
+            addBox({ width: 0.04, height: 0.3, depth: bw, x: x + w / 2 + bd, y: by + 0.15, z, material: detailMats.railing, parent, cast: false });
+        }
+    }
+}
+
+function addEntranceCanopy(parent, x, z, canopyW, bDepth) {
+    addBox({ width: canopyW, height: 0.08, depth: 0.9, x, y: 2.2, z: z - bDepth / 2 - 0.45, material: detailMats.ledge, parent });
+    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x - canopyW / 2 + 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent });
+    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x + canopyW / 2 - 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent });
+}
+
 const GRID_SIZE = 19;
 const GRID_RADIUS = Math.floor(GRID_SIZE / 2);
 const BLOCK_SIZE = 18;
@@ -357,18 +638,27 @@ function createDetachedHouse(parent, x, z, seed, scale = 1) {
     const width = (3.3 + n * 1.7) * scale;
     const depth = (3.1 + noise(seed, seed + 2, 31) * 1.8) * scale;
     const height = (2.1 + noise(seed, seed + 3, 32) * 2.1) * scale;
-    const wallMaterial = pick(residentialWalls, seed);
     const roofMaterial = noise(seed, seed + 4, 33) > 0.45 ? materials.roofTerracotta : materials.roofDark;
 
-    addBox({ width, height, depth, x, z, material: wallMaterial, parent });
+    // Main house body with textured facade (windows, entrance)
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'residential', parent, hasEntrance: true, roofMaterial });
+
+    // Pitched roof
     addBox({ width: width + 0.38, height: 0.42, depth: depth + 0.38, x, y: height + 0.21, z, material: roofMaterial, parent });
 
+    // Solar panels on some roofs
     if (noise(seed, seed + 5, 34) > 0.62) {
         addBox({ width: width * 0.48, height: 0.04, depth: depth * 0.42, x: x + width * 0.09, y: height + 0.45, z, material: materials.solar, parent, cast: false });
     }
 
+    // Garage / annex
     if (noise(seed, seed + 6, 35) > 0.74) {
-        addBox({ width: width * 0.55, height: 1.15 * scale, depth: 1.9 * scale, x: x - width * 0.26, y: 0.58 * scale, z: z + depth * 0.65, material: materials.roofConcrete, parent });
+        addBuildingWithFacade({ width: width * 0.55, height: 1.15 * scale, depth: 1.9 * scale, x: x - width * 0.26, z: z + depth * 0.65, seed: seed + 200, type: 'residential', parent, roofMaterial: materials.roofConcrete });
+    }
+
+    // Chimney on some houses
+    if (noise(seed, seed + 7, 36) > 0.7) {
+        addBox({ width: 0.35 * scale, height: 1.0 * scale, depth: 0.35 * scale, x: x + width * 0.2, y: height + 0.5 * scale, z: z - depth * 0.15, material: detailMats.chimneyCap, parent });
     }
 
     cityStats.houses += 1;
@@ -378,11 +668,21 @@ function createShopHouse(parent, x, z, seed, scale = 1) {
     const width = (4.4 + noise(seed, seed + 7, 40) * 2.8) * scale;
     const depth = (4.2 + noise(seed, seed + 8, 41) * 2.5) * scale;
     const height = (3.2 + noise(seed, seed + 9, 42) * 2.8) * scale;
-    const material = noise(seed, seed + 10, 43) > 0.5 ? materials.concrete : pick(residentialWalls, seed + 2);
 
-    addBox({ width, height, depth, x, z, material, parent });
+    // Main body with shop front texture
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'shop', parent, hasShopFront: true, roofMaterial: materials.roofConcrete });
+
+    // Flat roof ledge
     addBox({ width: width + 0.24, height: 0.34, depth: depth + 0.24, x, y: height + 0.17, z, material: materials.roofConcrete, parent });
-    addBox({ width: width * 0.82, height: 0.26, depth: 0.28, x, y: 1.7 * scale, z: z - depth / 2 - 0.16, material: materials.awning, parent, cast: false });
+
+    // Varied awning color
+    const awningMat = pick(awningPalette, seed);
+    addBox({ width: width * 0.82, height: 0.26, depth: 0.28, x, y: 1.7 * scale, z: z - depth / 2 - 0.16, material: awningMat, parent, cast: false });
+
+    // AC unit on side wall
+    if (noise(seed, seed + 11, 44) > 0.5) {
+        addBox({ width: 0.45, height: 0.3, depth: 0.25, x: x + width / 2 + 0.13, y: 2.2 * scale, z: z + depth * 0.2, material: detailMats.acUnit, parent });
+    }
 
     cityStats.midRises += 1;
 }
@@ -390,11 +690,20 @@ function createShopHouse(parent, x, z, seed, scale = 1) {
 function createLowRise(parent, x, z, seed, height) {
     const width = 5.2 + noise(seed, seed + 11, 50) * 2.8;
     const depth = 5.0 + noise(seed, seed + 12, 51) * 2.8;
-    const material = pick(officeMaterials, seed + 1);
 
-    addBox({ width, height, depth, x, z, material, parent });
-    addFacadeBands(parent, x, z, width, depth, height, 0.85);
+    // Textured facade with windows and entrance
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'office', parent, hasEntrance: true });
+
+    // Roof parapet
     addBox({ width: width * 0.72, height: 0.42, depth: depth * 0.7, x, y: height + 0.21, z, material: materials.roofConcrete, parent });
+
+    // Rooftop equipment
+    addRooftopDetails(parent, x, z, width, depth, height, seed);
+
+    // Entrance canopy
+    if (noise(seed, seed + 13, 52) > 0.45) {
+        addEntranceCanopy(parent, x, z, 2.5, depth);
+    }
 
     cityStats.midRises += 1;
 }
@@ -402,10 +711,18 @@ function createLowRise(parent, x, z, seed, height) {
 function createSmallApartment(parent, x, z, seed, height) {
     const width = 4.8 + noise(seed, seed + 13, 60) * 2.2;
     const depth = 4.8 + noise(seed, seed + 14, 61) * 2.5;
-    const material = noise(seed, seed + 15, 62) > 0.62 ? materials.glassGreen : pick(officeMaterials, seed + 3);
+    const isGlass = noise(seed, seed + 15, 62) > 0.62;
+    const facadeType = isGlass ? 'glass' : 'office';
 
-    addBox({ width, height, depth, x, z, material, parent });
-    addFacadeBands(parent, x, z, width, depth, height, 0.7);
+    // Textured facade with windows and entrance
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, hasEntrance: true });
+
+    // Balconies
+    const balconyCount = Math.max(1, Math.floor(height / 4));
+    addBalconies(parent, x, z, width, depth, height, seed, balconyCount);
+
+    // Rooftop equipment
+    addRooftopDetails(parent, x, z, width, depth, height, seed);
 
     cityStats.midRises += 1;
 }
@@ -414,13 +731,28 @@ function createOfficeTower(parent, x, z, seed, height) {
     const width = 4.8 + noise(seed, seed + 16, 70) * 3.8;
     const depth = 4.8 + noise(seed, seed + 17, 71) * 3.9;
     const materialRoll = noise(seed, seed + 18, 72);
-    const material = materialRoll > 0.66 ? materials.glassBlue : materialRoll > 0.42 ? materials.glassGreen : pick(officeMaterials, seed + 4);
+    const facadeType = materialRoll > 0.42 ? 'glass' : 'office';
 
-    addBox({ width, height, depth, x, z, material, parent });
-    addFacadeBands(parent, x, z, width, depth, height, 1.0);
+    // Glass curtain wall or office facade with windows
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, hasEntrance: true });
 
+    // Mechanical penthouse
     if (noise(seed, seed + 19, 73) > 0.58) {
         addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent });
+    }
+
+    // Rooftop equipment
+    addRooftopDetails(parent, x, z, width, depth, height, seed);
+
+    // Entrance canopy for towers
+    if (noise(seed, seed + 20, 74) > 0.4) {
+        addEntranceCanopy(parent, x, z, Math.min(3.5, width * 0.6), depth);
+    }
+
+    // Balconies on non-glass towers
+    if (facadeType !== 'glass' && noise(seed, seed + 21, 75) > 0.5) {
+        const balconyCount = Math.max(2, Math.floor(height / 6));
+        addBalconies(parent, x, z, width, depth, height, seed, balconyCount);
     }
 
     cityStats.towers += 1;
@@ -475,7 +807,7 @@ function createIndustrialBlock(block) {
         const depth = 6.5 + noise(block.row, block.col + i, 94) * 5.0;
         const height = 4.2 + noise(block.row + i, block.col + i, 95) * 4.2;
 
-        addBox({ width, height, depth, x, z, material: materials.industryWall, parent: group });
+        addBuildingWithFacade({ width, height, depth, x, z, seed: block.index + i * 7, type: 'industrial', parent: group, roofMaterial: materials.industryRoof });
         addBox({ width: width + 0.34, height: 0.48, depth: depth + 0.34, x, y: height + 0.24, z, material: materials.industryRoof, parent: group });
     }
 
