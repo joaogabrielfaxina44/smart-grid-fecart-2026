@@ -3,16 +3,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const container = document.getElementById('canvas-container');
 
+// ── Cena, Câmera e Renderizador Otimizado ────────────────────
+
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xbfd3e6);
+const skyColorDay = new THREE.Color(0xbfd3e6);
+scene.background = skyColorDay.clone();
 scene.fog = new THREE.Fog(0xbfd3e6, 320, 860);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1600);
-camera.position.set(260, 220, 330);
+const defaultCamPos = new THREE.Vector3(260, 220, 330);
+const defaultCamTarget = new THREE.Vector3(0, 0, 0);
+camera.position.copy(defaultCamPos);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+    stencil: false
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -21,25 +30,53 @@ renderer.toneMappingExposure = 1.0;
 container.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
+controls.target.copy(defaultCamTarget);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.screenSpacePanning = true;
-controls.minDistance = 24;
-controls.maxDistance = 760;
-controls.maxPolarAngle = Math.PI / 2 - 0.03;
+controls.minDistance = 6;
+controls.maxDistance = 780;
+controls.maxPolarAngle = Math.PI / 2 - 0.02;
 controls.rotateSpeed = 0.52;
 controls.zoomSpeed = 0.88;
 controls.panSpeed = 0.82;
+
+// Sistema de transição suave de foco da câmera
+let targetFocusPoint = null;
+let targetCamPos = null;
+let isTransitioningCam = false;
+
+function focusOnPoint(targetX, targetY, targetZ, shouldZoom = false) {
+    targetFocusPoint = new THREE.Vector3(targetX, targetY, targetZ);
+    if (shouldZoom) {
+        const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+        const currentDist = offset.length();
+        const desiredDist = Math.max(32, Math.min(currentDist, 75));
+        offset.normalize().multiplyScalar(desiredDist);
+        if (offset.y < 15) offset.y = 15;
+        targetCamPos = new THREE.Vector3().addVectors(targetFocusPoint, offset);
+    } else {
+        targetCamPos = null;
+    }
+    isTransitioningCam = true;
+}
+
+function resetCameraView() {
+    targetFocusPoint = defaultCamTarget.clone();
+    targetCamPos = defaultCamPos.clone();
+    isTransitioningCam = true;
+}
 
 const cityGroup = new THREE.Group();
 cityGroup.name = 'Large Mixed Smart City';
 scene.add(cityGroup);
 
+// Geometrias reutilizáveis base
 const unitBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
-const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.26, 1.6, 8);
-const canopyGeometry = new THREE.SphereGeometry(1, 10, 8);
+const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.26, 1.6, 7);
+const canopyGeometry = new THREE.SphereGeometry(1, 8, 6);
 
+// Materiais compartilhados
 const materials = {
     terrain: new THREE.MeshStandardMaterial({ color: 0x708d63, roughness: 0.96 }),
     asphalt: new THREE.MeshStandardMaterial({ color: 0x303337, roughness: 0.9 }),
@@ -97,7 +134,7 @@ const officeMaterials = [
     new THREE.MeshStandardMaterial({ color: 0x8a8f8e, roughness: 0.62 })
 ];
 
-// ── Facade Texture System & Building Detail Helpers ──────────
+// ── Sistema de Texturas de Fachadas & Detalhes Urbanos ───────
 
 const facadeMaterialCache = new Map();
 
@@ -142,11 +179,10 @@ const powerMats = {
     insulator: new THREE.MeshStandardMaterial({ color: 0x3b8b88, roughness: 0.25, metalness: 0.2 }),
     transformer: new THREE.MeshStandardMaterial({ color: 0x32373d, roughness: 0.4, metalness: 0.5 }),
     streetLamp: new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5 }),
-    lampBulb: new THREE.MeshBasicMaterial({ color: 0xffeaad }),
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
-    wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }), // Underground / active
-    wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }), // Overload
-    wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }), // Dead
+    wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }),
+    wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }),
+    wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
 };
 
 function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
@@ -163,9 +199,8 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
     ctx.fillStyle = pal[Math.abs(seed) % pal.length];
     ctx.fillRect(0, 0, cw, ch);
 
-    // Subtle wall texture noise
     ctx.globalAlpha = 0.03;
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 14; i++) {
         ctx.fillStyle = noise(seed + i, i, 500) > 0.5 ? '#000' : '#fff';
         ctx.fillRect(
             noise(seed + i, i, 501) * cw, noise(i, seed, 502) * ch,
@@ -174,7 +209,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
     }
     ctx.globalAlpha = 1;
 
-    // Window parameters by building type
     let ww, wh, spX, spY;
     if (type === 'glass') {
         ww = Math.round((0.9 + noise(seed, 0, 510) * 0.4) * ppu);
@@ -209,11 +243,9 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
     const rows = Math.max(1, Math.floor((ch - mTop - mBot) / spY));
     const x0 = (cw - (cols - 1) * spX - ww) / 2;
 
-    // Floor separator lines
     ctx.fillStyle = 'rgba(0,0,0,0.06)';
     for (let r = 1; r < rows; r++) ctx.fillRect(0, mTop + r * spY - 1, cw, 2);
 
-    // Draw window grid
     const litChance = type === 'glass' ? 0.3 : 0.15;
     const litPal = type === 'glass' ? windowLitCool : windowLitWarm;
 
@@ -230,7 +262,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
             ctx.strokeStyle = type === 'glass' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.16)';
             ctx.lineWidth = 1;
             ctx.strokeRect(wx, wy, ww, wh);
-            // Cross dividers on some windows
             if (type !== 'glass' && type !== 'industrial' && noise(seed + c, r, 531) > 0.45) {
                 ctx.beginPath();
                 ctx.moveTo(wx + ww / 2, wy);
@@ -238,7 +269,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
                 ctx.strokeStyle = 'rgba(0,0,0,0.1)';
                 ctx.stroke();
             }
-            // Window sill
             if (type !== 'glass') {
                 ctx.fillStyle = 'rgba(0,0,0,0.07)';
                 ctx.fillRect(wx - 1, wy + wh, ww + 2, 2);
@@ -246,7 +276,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
         }
     }
 
-    // Ground floor entrance door
     if (hasEntrance) {
         const dw = Math.round(cw * 0.2);
         const dh = Math.round(ch * 0.12);
@@ -261,7 +290,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
         ctx.fillRect(dx + dw / 2 + 1, dy + 2, dw / 2 - 3, dh - 4);
     }
 
-    // Ground floor shop front
     if (hasShopFront) {
         const sh = Math.round(ch * 0.14);
         const sfy = ch - sh;
@@ -275,7 +303,6 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
         ctx.fillRect(Math.round(cw / 2 - sdw / 2), sfy + 2, sdw, sh - 4);
     }
 
-    // Industrial loading door
     if (type === 'industrial' && noise(seed, 5, 540) > 0.4) {
         const ldw = Math.round(cw * 0.3);
         const ldh = Math.round(ch * 0.35);
@@ -286,22 +313,10 @@ function createFacadeCanvas(faceW, faceH, seed, opts = {}) {
         ctx.strokeStyle = '#444';
         ctx.lineWidth = 2;
         ctx.strokeRect(ldx, ldy, ldw, ldh);
-        for (let ly = ldy + 4; ly < ch; ly += 5) {
-            ctx.fillStyle = 'rgba(0,0,0,0.1)';
-            ctx.fillRect(ldx + 1, ly, ldw - 2, 1);
-        }
     }
 
-    // Top cornice
     ctx.fillStyle = 'rgba(0,0,0,0.08)';
     ctx.fillRect(0, 0, cw, 3);
-
-    // Vertical pilaster accent strips
-    if (noise(seed, 0, 550) > 0.55 && type !== 'glass') {
-        ctx.fillStyle = 'rgba(0,0,0,0.04)';
-        ctx.fillRect(0, 0, 3, ch);
-        ctx.fillRect(cw - 3, 0, 3, ch);
-    }
 
     return canvas;
 }
@@ -335,7 +350,6 @@ function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent 
     const sideMatR = getFacadeMaterial(depth, height, seed + 150, type, {});
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
-    // BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
     const mesh = new THREE.Mesh(unitBoxGeometry, [sideMatR, sideMatL, topMat, botMat, frontMat, backMat]);
     mesh.position.set(x, height / 2, z);
     mesh.scale.set(width, height, depth);
@@ -351,21 +365,20 @@ function addRooftopDetails(parent, x, z, w, d, h, seed) {
     const n3 = noise(seed, 2, 562);
     if (n1 > 0.4) {
         const tank = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.35 + n1 * 0.25, 0.35 + n1 * 0.25, 0.9, 10),
+            new THREE.CylinderGeometry(0.35 + n1 * 0.25, 0.35 + n1 * 0.25, 0.9, 8),
             detailMats.waterTank
         );
         tank.position.set(x + w * 0.2, h + 0.45, z - d * 0.15);
-        tank.castShadow = true;
         parent.add(tank);
     }
     if (n2 > 0.35) {
-        addBox({ width: 0.9 + n2 * 0.5, height: 0.45, depth: 0.6 + n2 * 0.35, x: x - w * 0.15, y: h + 0.22, z: z + d * 0.1, material: detailMats.acUnit, parent });
+        addBox({ width: 0.9 + n2 * 0.5, height: 0.45, depth: 0.6 + n2 * 0.35, x: x - w * 0.15, y: h + 0.22, z: z + d * 0.1, material: detailMats.acUnit, parent, cast: false, receive: false });
     }
     if (n3 > 0.55) {
-        addBox({ width: 0.06, height: 1.4 + n3 * 1.0, depth: 0.06, x: x + w * 0.25, y: h + 0.7 + n3 * 0.5, z: z + d * 0.22, material: detailMats.antenna, parent });
+        addBox({ width: 0.06, height: 1.4 + n3 * 1.0, depth: 0.06, x: x + w * 0.25, y: h + 0.7 + n3 * 0.5, z: z + d * 0.22, material: detailMats.antenna, parent, cast: false, receive: false });
     }
     if (noise(seed, 3, 563) > 0.6) {
-        addBox({ width: w * 0.4, height: 0.2, depth: 0.25, x, y: h + 0.1, z: z - d * 0.25, material: detailMats.ductwork, parent });
+        addBox({ width: w * 0.4, height: 0.2, depth: 0.25, x, y: h + 0.1, z: z - d * 0.25, material: detailMats.ductwork, parent, cast: false, receive: false });
     }
 }
 
@@ -376,21 +389,23 @@ function addBalconies(parent, x, z, w, d, h, seed, count) {
     for (let i = 1; i <= count; i++) {
         const by = flH * i;
         if (noise(seed + i, 0, 572) > 0.35) {
-            addBox({ width: bw, height: 0.07, depth: bd, x, y: by, z: z + d / 2 + bd / 2, material: detailMats.balcony, parent });
-            addBox({ width: bw, height: 0.3, depth: 0.04, x, y: by + 0.15, z: z + d / 2 + bd, material: detailMats.railing, parent, cast: false });
+            addBox({ width: bw, height: 0.07, depth: bd, x, y: by, z: z + d / 2 + bd / 2, material: detailMats.balcony, parent, cast: false, receive: false });
+            addBox({ width: bw, height: 0.3, depth: 0.04, x, y: by + 0.15, z: z + d / 2 + bd, material: detailMats.railing, parent, cast: false, receive: false });
         }
         if (noise(seed + i, 1, 573) > 0.6) {
-            addBox({ width: bd, height: 0.07, depth: bw, x: x + w / 2 + bd / 2, y: by, z, material: detailMats.balcony, parent });
-            addBox({ width: 0.04, height: 0.3, depth: bw, x: x + w / 2 + bd, y: by + 0.15, z, material: detailMats.railing, parent, cast: false });
+            addBox({ width: bd, height: 0.07, depth: bw, x: x + w / 2 + bd / 2, y: by, z, material: detailMats.balcony, parent, cast: false, receive: false });
+            addBox({ width: 0.04, height: 0.3, depth: bw, x: x + w / 2 + bd, y: by + 0.15, z, material: detailMats.railing, parent, cast: false, receive: false });
         }
     }
 }
 
 function addEntranceCanopy(parent, x, z, canopyW, bDepth) {
-    addBox({ width: canopyW, height: 0.08, depth: 0.9, x, y: 2.2, z: z - bDepth / 2 - 0.45, material: detailMats.ledge, parent });
-    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x - canopyW / 2 + 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent });
-    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x + canopyW / 2 - 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent });
+    addBox({ width: canopyW, height: 0.08, depth: 0.9, x, y: 2.2, z: z - bDepth / 2 - 0.45, material: detailMats.ledge, parent, cast: false, receive: false });
+    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x - canopyW / 2 + 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent, cast: false, receive: false });
+    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x + canopyW / 2 - 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent, cast: false, receive: false });
 }
+
+// ── Dimensões do Grid e Estatísticas ────────────────────────
 
 const GRID_SIZE = 19;
 const GRID_RADIUS = Math.floor(GRID_SIZE / 2);
@@ -415,6 +430,14 @@ const cityStats = {
     cars: 0
 };
 
+// Coleta de dados para InstancedMesh (Árvores, Carros e Bases de Calçada)
+const treeInstancesData = [];
+const baseInstancesData = [];
+const carInstancesData = [];
+const poleShaftData = [];
+const poleTransData = [];
+const poleLampData = [];
+
 function seededRandom(seed) {
     let value = seed % 2147483647;
     return () => {
@@ -422,8 +445,6 @@ function seededRandom(seed) {
         return (value - 1) / 2147483646;
     };
 }
-
-const random = seededRandom(2026);
 
 function noise(row, col, salt = 0) {
     const value = Math.sin(row * 127.1 + col * 311.7 + salt * 74.7) * 43758.5453;
@@ -474,14 +495,14 @@ function createRoadNetwork() {
 }
 
 function addRoadSegment(width, depth, x, z) {
-    addBox({ width, height: 0.08, depth, x, y: 0.04, z, material: materials.asphalt, cast: false });
+    addBox({ width, height: 0.08, depth, x, y: 0.04, z, material: materials.asphalt, cast: false, receive: true });
 
     if (width > depth) {
-        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false });
-        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false });
+        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
+        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
     } else {
-        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false });
-        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false });
+        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
+        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
     }
 }
 
@@ -543,17 +564,14 @@ function createDistricts() {
 }
 
 function createBlockBase(block) {
-    const base = addBox({
-        width: BLOCK_SIZE,
-        height: 0.16,
-        depth: BLOCK_SIZE,
+    baseInstancesData.push({
         x: block.x,
         y: 0.14,
         z: block.z,
-        material: materials.sidewalk,
-        cast: false
+        width: BLOCK_SIZE,
+        height: 0.16,
+        depth: BLOCK_SIZE
     });
-    base.userData = { zone: block.type, label: block.label };
     cityStats.blocks += 1;
 }
 
@@ -654,25 +672,19 @@ function createDetachedHouse(parent, x, z, seed, scale = 1) {
     const height = (2.1 + noise(seed, seed + 3, 32) * 2.1) * scale;
     const roofMaterial = noise(seed, seed + 4, 33) > 0.45 ? materials.roofTerracotta : materials.roofDark;
 
-    // Main house body with textured facade (windows, entrance)
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'residential', parent, hasEntrance: true, roofMaterial });
+    addBox({ width: width + 0.38, height: 0.42, depth: depth + 0.38, x, y: height + 0.21, z, material: roofMaterial, parent, cast: false, receive: true });
 
-    // Pitched roof
-    addBox({ width: width + 0.38, height: 0.42, depth: depth + 0.38, x, y: height + 0.21, z, material: roofMaterial, parent });
-
-    // Solar panels on some roofs
     if (noise(seed, seed + 5, 34) > 0.62) {
-        addBox({ width: width * 0.48, height: 0.04, depth: depth * 0.42, x: x + width * 0.09, y: height + 0.45, z, material: materials.solar, parent, cast: false });
+        addBox({ width: width * 0.48, height: 0.04, depth: depth * 0.42, x: x + width * 0.09, y: height + 0.45, z, material: materials.solar, parent, cast: false, receive: false });
     }
 
-    // Garage / annex
     if (noise(seed, seed + 6, 35) > 0.74) {
         addBuildingWithFacade({ width: width * 0.55, height: 1.15 * scale, depth: 1.9 * scale, x: x - width * 0.26, z: z + depth * 0.65, seed: seed + 200, type: 'residential', parent, roofMaterial: materials.roofConcrete });
     }
 
-    // Chimney on some houses
     if (noise(seed, seed + 7, 36) > 0.7) {
-        addBox({ width: 0.35 * scale, height: 1.0 * scale, depth: 0.35 * scale, x: x + width * 0.2, y: height + 0.5 * scale, z: z - depth * 0.15, material: detailMats.chimneyCap, parent });
+        addBox({ width: 0.35 * scale, height: 1.0 * scale, depth: 0.35 * scale, x: x + width * 0.2, y: height + 0.5 * scale, z: z - depth * 0.15, material: detailMats.chimneyCap, parent, cast: false, receive: false });
     }
 
     cityStats.houses += 1;
@@ -683,19 +695,14 @@ function createShopHouse(parent, x, z, seed, scale = 1) {
     const depth = (4.2 + noise(seed, seed + 8, 41) * 2.5) * scale;
     const height = (3.2 + noise(seed, seed + 9, 42) * 2.8) * scale;
 
-    // Main body with shop front texture
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'shop', parent, hasShopFront: true, roofMaterial: materials.roofConcrete });
+    addBox({ width: width + 0.24, height: 0.34, depth: depth + 0.24, x, y: height + 0.17, z, material: materials.roofConcrete, parent, cast: false, receive: true });
 
-    // Flat roof ledge
-    addBox({ width: width + 0.24, height: 0.34, depth: depth + 0.24, x, y: height + 0.17, z, material: materials.roofConcrete, parent });
-
-    // Varied awning color
     const awningMat = pick(awningPalette, seed);
-    addBox({ width: width * 0.82, height: 0.26, depth: 0.28, x, y: 1.7 * scale, z: z - depth / 2 - 0.16, material: awningMat, parent, cast: false });
+    addBox({ width: width * 0.82, height: 0.26, depth: 0.28, x, y: 1.7 * scale, z: z - depth / 2 - 0.16, material: awningMat, parent, cast: false, receive: false });
 
-    // AC unit on side wall
     if (noise(seed, seed + 11, 44) > 0.5) {
-        addBox({ width: 0.45, height: 0.3, depth: 0.25, x: x + width / 2 + 0.13, y: 2.2 * scale, z: z + depth * 0.2, material: detailMats.acUnit, parent });
+        addBox({ width: 0.45, height: 0.3, depth: 0.25, x: x + width / 2 + 0.13, y: 2.2 * scale, z: z + depth * 0.2, material: detailMats.acUnit, parent, cast: false, receive: false });
     }
 
     cityStats.midRises += 1;
@@ -705,16 +712,10 @@ function createLowRise(parent, x, z, seed, height) {
     const width = 5.2 + noise(seed, seed + 11, 50) * 2.8;
     const depth = 5.0 + noise(seed, seed + 12, 51) * 2.8;
 
-    // Textured facade with windows and entrance
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'office', parent, hasEntrance: true });
-
-    // Roof parapet
-    addBox({ width: width * 0.72, height: 0.42, depth: depth * 0.7, x, y: height + 0.21, z, material: materials.roofConcrete, parent });
-
-    // Rooftop equipment
+    addBox({ width: width * 0.72, height: 0.42, depth: depth * 0.7, x, y: height + 0.21, z, material: materials.roofConcrete, parent, cast: false, receive: true });
     addRooftopDetails(parent, x, z, width, depth, height, seed);
 
-    // Entrance canopy
     if (noise(seed, seed + 13, 52) > 0.45) {
         addEntranceCanopy(parent, x, z, 2.5, depth);
     }
@@ -728,14 +729,10 @@ function createSmallApartment(parent, x, z, seed, height) {
     const isGlass = noise(seed, seed + 15, 62) > 0.62;
     const facadeType = isGlass ? 'glass' : 'office';
 
-    // Textured facade with windows and entrance
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, hasEntrance: true });
 
-    // Balconies
     const balconyCount = Math.max(1, Math.floor(height / 4));
     addBalconies(parent, x, z, width, depth, height, seed, balconyCount);
-
-    // Rooftop equipment
     addRooftopDetails(parent, x, z, width, depth, height, seed);
 
     cityStats.midRises += 1;
@@ -747,23 +744,18 @@ function createOfficeTower(parent, x, z, seed, height) {
     const materialRoll = noise(seed, seed + 18, 72);
     const facadeType = materialRoll > 0.42 ? 'glass' : 'office';
 
-    // Glass curtain wall or office facade with windows
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, hasEntrance: true });
 
-    // Mechanical penthouse
     if (noise(seed, seed + 19, 73) > 0.58) {
-        addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent });
+        addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent, cast: true, receive: true });
     }
 
-    // Rooftop equipment
     addRooftopDetails(parent, x, z, width, depth, height, seed);
 
-    // Entrance canopy for towers
     if (noise(seed, seed + 20, 74) > 0.4) {
         addEntranceCanopy(parent, x, z, Math.min(3.5, width * 0.6), depth);
     }
 
-    // Balconies on non-glass towers
     if (facadeType !== 'glass' && noise(seed, seed + 21, 75) > 0.5) {
         const balconyCount = Math.max(2, Math.floor(height / 6));
         addBalconies(parent, x, z, width, depth, height, seed, balconyCount);
@@ -772,38 +764,29 @@ function createOfficeTower(parent, x, z, seed, height) {
     cityStats.towers += 1;
 }
 
-function addFacadeBands(parent, x, z, width, depth, height, density = 1) {
-    const bandCount = Math.min(9, Math.max(3, Math.floor((height / 5.6) * density)));
-    for (let band = 1; band <= bandCount; band += 1) {
-        const y = (height / (bandCount + 1)) * band;
-        addBox({ width: width + 0.06, height: 0.13, depth: 0.07, x, y, z: z + depth / 2 + 0.04, material: materials.windowBand, parent, cast: false, receive: false });
-        addBox({ width: width + 0.06, height: 0.13, depth: 0.07, x, y, z: z - depth / 2 - 0.04, material: materials.windowBand, parent, cast: false, receive: false });
-    }
-}
-
 function createHospital(block) {
     const group = new THREE.Group();
     group.name = `hospital-${block.index}`;
     cityGroup.add(group);
 
-    addBox({ width: 15.6, height: 6, depth: 12.6, x: block.x, z: block.z, material: materials.hospitalWhite, parent: group });
-    addBox({ width: 7.2, height: 5, depth: 17.0, x: block.x - 4.2, y: 2.5, z: block.z, material: materials.hospitalWhite, parent: group });
-    addBox({ width: 5.4, height: 8.4, depth: 6.6, x: block.x + 5.4, y: 4.2, z: block.z - 2.8, material: materials.concrete, parent: group });
-    addBox({ width: 1.1, height: 0.08, depth: 6.2, x: block.x, y: 6.12, z: block.z, material: materials.hospitalRed, parent: group, cast: false });
-    addBox({ width: 6.2, height: 0.08, depth: 1.1, x: block.x, y: 6.14, z: block.z, material: materials.hospitalRed, parent: group, cast: false });
+    addBox({ width: 15.6, height: 6, depth: 12.6, x: block.x, z: block.z, material: materials.hospitalWhite, parent: group, cast: true, receive: true });
+    addBox({ width: 7.2, height: 5, depth: 17.0, x: block.x - 4.2, y: 2.5, z: block.z, material: materials.hospitalWhite, parent: group, cast: true, receive: true });
+    addBox({ width: 5.4, height: 8.4, depth: 6.6, x: block.x + 5.4, y: 4.2, z: block.z - 2.8, material: materials.concrete, parent: group, cast: true, receive: true });
+    addBox({ width: 1.1, height: 0.08, depth: 6.2, x: block.x, y: 6.12, z: block.z, material: materials.hospitalRed, parent: group, cast: false, receive: false });
+    addBox({ width: 6.2, height: 0.08, depth: 1.1, x: block.x, y: 6.14, z: block.z, material: materials.hospitalRed, parent: group, cast: false, receive: false });
 
     const helipad = new THREE.Mesh(
-        new THREE.CylinderGeometry(3.0, 3.0, 0.08, 48),
+        new THREE.CylinderGeometry(3.0, 3.0, 0.08, 24),
         new THREE.MeshStandardMaterial({ color: 0x50565a, roughness: 0.74 })
     );
     helipad.position.set(block.x + 5.4, 8.48, block.z - 2.8);
-    helipad.castShadow = true;
+    helipad.castShadow = false;
     helipad.receiveShadow = true;
     group.add(helipad);
 
-    addBox({ width: 0.35, height: 0.1, depth: 3.6, x: block.x + 5.4, y: 8.56, z: block.z - 2.8, material: materials.roadMarking, parent: group, cast: false });
-    addBox({ width: 2.4, height: 0.1, depth: 0.35, x: block.x + 5.4, y: 8.57, z: block.z - 2.8, material: materials.roadMarking, parent: group, cast: false });
-    addBox({ width: 10.0, height: 0.04, depth: 4.2, x: block.x - 1.8, y: 0.32, z: block.z - 7.1, material: materials.asphalt, parent: group, cast: false });
+    addBox({ width: 0.35, height: 0.1, depth: 3.6, x: block.x + 5.4, y: 8.56, z: block.z - 2.8, material: materials.roadMarking, parent: group, cast: false, receive: false });
+    addBox({ width: 2.4, height: 0.1, depth: 0.35, x: block.x + 5.4, y: 8.57, z: block.z - 2.8, material: materials.roadMarking, parent: group, cast: false, receive: false });
+    addBox({ width: 10.0, height: 0.04, depth: 4.2, x: block.x - 1.8, y: 0.32, z: block.z - 7.1, material: materials.asphalt, parent: group, cast: false, receive: true });
 
     cityStats.hospitals += 1;
 }
@@ -822,20 +805,20 @@ function createIndustrialBlock(block) {
         const height = 4.2 + noise(block.row + i, block.col + i, 95) * 4.2;
 
         addBuildingWithFacade({ width, height, depth, x, z, seed: block.index + i * 7, type: 'industrial', parent: group, roofMaterial: materials.industryRoof });
-        addBox({ width: width + 0.34, height: 0.48, depth: depth + 0.34, x, y: height + 0.24, z, material: materials.industryRoof, parent: group });
+        addBox({ width: width + 0.34, height: 0.48, depth: depth + 0.34, x, y: height + 0.24, z, material: materials.industryRoof, parent: group, cast: false, receive: true });
     }
 
     if (noise(block.row, block.col, 96) > 0.48) {
         createChimney(group, block.x + 6.3, block.z - 6.0);
     }
 
-    addBox({ width: 13, height: 0.06, depth: 4.7, x: block.x - 1.8, y: 0.32, z: block.z + 6.7, material: materials.asphalt, parent: group, cast: false });
+    addBox({ width: 13, height: 0.06, depth: 4.7, x: block.x - 1.8, y: 0.32, z: block.z + 6.7, material: materials.asphalt, parent: group, cast: false, receive: true });
     cityStats.industrial += 1;
 }
 
 function createChimney(parent, x, z) {
     const chimney = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.72, 0.96, 9, 18),
+        new THREE.CylinderGeometry(0.72, 0.96, 9, 12),
         new THREE.MeshStandardMaterial({ color: 0x7d776d, roughness: 0.82 })
     );
     chimney.position.set(x, 4.5, z);
@@ -845,18 +828,18 @@ function createChimney(parent, x, z) {
 }
 
 function createPark(block) {
-    addBox({ width: 16.8, height: 0.1, depth: 16.8, x: block.x, y: 0.24, z: block.z, material: materials.park, cast: false });
+    addBox({ width: 16.8, height: 0.1, depth: 16.8, x: block.x, y: 0.24, z: block.z, material: materials.park, cast: false, receive: true });
 
     const treeCount = 10 + Math.floor(noise(block.row, block.col, 100) * 11);
     for (let i = 0; i < treeCount; i += 1) {
         const x = block.x - 7.0 + noise(block.row + i, block.col, 101) * 14.0;
         const z = block.z - 7.0 + noise(block.row, block.col + i, 102) * 14.0;
-        createTree(x, z, 0.82 + noise(block.row + i, block.col + i, 103) * 0.72);
+        collectTreeInstance(x, z, 0.82 + noise(block.row + i, block.col + i, 103) * 0.72);
     }
 
     if (noise(block.row, block.col, 104) > 0.32) {
-        addBox({ width: 12, height: 0.04, depth: 1.1, x: block.x, y: 0.33, z: block.z, material: materials.sidewalk, cast: false });
-        addBox({ width: 1.1, height: 0.04, depth: 12, x: block.x, y: 0.34, z: block.z, material: materials.sidewalk, cast: false });
+        addBox({ width: 12, height: 0.04, depth: 1.1, x: block.x, y: 0.33, z: block.z, material: materials.sidewalk, cast: false, receive: true });
+        addBox({ width: 1.1, height: 0.04, depth: 12, x: block.x, y: 0.34, z: block.z, material: materials.sidewalk, cast: false, receive: true });
     }
 
     cityStats.parks += 1;
@@ -867,9 +850,9 @@ function createServiceBlock(block) {
     group.name = `services-${block.index}`;
     cityGroup.add(group);
 
-    addBox({ width: 7.8, height: 5.2, depth: 6.2, x: block.x - 4.3, z: block.z - 3.0, material: materials.concrete, parent: group });
-    addBox({ width: 7.2, height: 3.7, depth: 8.2, x: block.x + 4.4, z: block.z + 3.1, material: materials.industryWall, parent: group });
-    addBox({ width: 12.8, height: 0.04, depth: 4.6, x: block.x, y: 0.32, z: block.z + 7.0, material: materials.asphalt, parent: group, cast: false });
+    addBox({ width: 7.8, height: 5.2, depth: 6.2, x: block.x - 4.3, z: block.z - 3.0, material: materials.concrete, parent: group, cast: true, receive: true });
+    addBox({ width: 7.2, height: 3.7, depth: 8.2, x: block.x + 4.4, z: block.z + 3.1, material: materials.industryWall, parent: group, cast: true, receive: true });
+    addBox({ width: 12.8, height: 0.04, depth: 4.6, x: block.x, y: 0.32, z: block.z + 7.0, material: materials.asphalt, parent: group, cast: false, receive: true });
 
     for (let i = 0; i < 4; i += 1) {
         createUtilityFrame(group, block.x - 5.0 + i * 3.2, block.z + 5.8);
@@ -878,32 +861,73 @@ function createServiceBlock(block) {
 
 function createUtilityFrame(parent, x, z) {
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x4f5557, roughness: 0.7 });
-    addBox({ width: 0.18, height: 3.2, depth: 0.18, x: x - 0.8, y: 1.6, z, material: poleMaterial, parent });
-    addBox({ width: 0.18, height: 3.2, depth: 0.18, x: x + 0.8, y: 1.6, z, material: poleMaterial, parent });
-    addBox({ width: 1.9, height: 0.18, depth: 0.18, x, y: 3.1, z, material: poleMaterial, parent });
+    addBox({ width: 0.18, height: 3.2, depth: 0.18, x: x - 0.8, y: 1.6, z, material: poleMaterial, parent, cast: false });
+    addBox({ width: 0.18, height: 3.2, depth: 0.18, x: x + 0.8, y: 1.6, z, material: poleMaterial, parent, cast: false });
+    addBox({ width: 1.9, height: 0.18, depth: 0.18, x, y: 3.1, z, material: poleMaterial, parent, cast: false });
 }
 
 function createStreetTrees(blockX, blockZ, count) {
     for (let i = 0; i < count; i += 1) {
         const side = i % 2 === 0 ? -1 : 1;
-        createTree(blockX + side * 8.9, blockZ - 6.5 + i * 5.2, 0.66 + noise(blockX + i, blockZ, 120) * 0.18);
+        collectTreeInstance(blockX + side * 8.9, blockZ - 6.5 + i * 5.2, 0.66 + noise(blockX + i, blockZ, 120) * 0.18);
     }
 }
 
-function createTree(x, z, scale = 1) {
-    const trunk = new THREE.Mesh(trunkGeometry, materials.trunk);
-    trunk.position.set(x, 0.8 * scale, z);
-    trunk.scale.set(scale, scale, scale);
-    trunk.castShadow = true;
-    cityGroup.add(trunk);
-
-    const canopy = new THREE.Mesh(canopyGeometry, materials.canopy);
-    canopy.position.set(x, 1.9 * scale, z);
-    canopy.scale.set(scale, scale, scale);
-    canopy.castShadow = true;
-    cityGroup.add(canopy);
-
+function collectTreeInstance(x, z, scale = 1) {
+    treeInstancesData.push({ x, z, scale });
     cityStats.trees += 1;
+}
+
+function buildInstancedTrees() {
+    const count = treeInstancesData.length;
+    if (count === 0) return;
+
+    const trunkMesh = new THREE.InstancedMesh(trunkGeometry, materials.trunk, count);
+    const canopyMesh = new THREE.InstancedMesh(canopyGeometry, materials.canopy, count);
+
+    trunkMesh.castShadow = true;
+    canopyMesh.castShadow = true;
+    canopyMesh.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+
+    treeInstancesData.forEach((item, index) => {
+        dummy.position.set(item.x, 0.8 * item.scale, item.z);
+        dummy.scale.set(item.scale, item.scale, item.scale);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        trunkMesh.setMatrixAt(index, dummy.matrix);
+
+        dummy.position.set(item.x, 1.9 * item.scale, item.z);
+        dummy.updateMatrix();
+        canopyMesh.setMatrixAt(index, dummy.matrix);
+    });
+
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    canopyMesh.instanceMatrix.needsUpdate = true;
+
+    cityGroup.add(trunkMesh);
+    cityGroup.add(canopyMesh);
+}
+
+function buildInstancedBases() {
+    const count = baseInstancesData.length;
+    if (count === 0) return;
+
+    const baseMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.sidewalk, count);
+    baseMesh.receiveShadow = true;
+    baseMesh.castShadow = false;
+
+    const dummy = new THREE.Object3D();
+    baseInstancesData.forEach((b, i) => {
+        dummy.position.set(b.x, b.y, b.z);
+        dummy.scale.set(b.width, b.height, b.depth);
+        dummy.updateMatrix();
+        baseMesh.setMatrixAt(i, dummy.matrix);
+    });
+
+    baseMesh.instanceMatrix.needsUpdate = true;
+    cityGroup.add(baseMesh);
 }
 
 function createTrafficHints() {
@@ -920,120 +944,148 @@ function createTrafficHints() {
         const x = horizontal ? along : road + laneOffset;
         const z = horizontal ? road + laneOffset : along;
 
-        addBox({
-            width,
-            height: 0.42,
-            depth,
-            x,
-            y: 0.42,
-            z,
-            material: pick(carMaterials, i),
-            cast: false,
-            receive: false
+        carInstancesData.push({
+            x, y: 0.42, z,
+            width, height: 0.42, depth,
+            matIndex: i % carMaterials.length
         });
         cityStats.cars += 1;
     }
+
+    carMaterials.forEach((mat, matIdx) => {
+        const matchingCars = carInstancesData.filter(c => c.matIndex === matIdx);
+        if (matchingCars.length === 0) return;
+
+        const carMesh = new THREE.InstancedMesh(unitBoxGeometry, mat, matchingCars.length);
+        carMesh.castShadow = false;
+        carMesh.receiveShadow = false;
+
+        const dummy = new THREE.Object3D();
+        matchingCars.forEach((c, idx) => {
+            dummy.position.set(c.x, c.y, c.z);
+            dummy.scale.set(c.width, c.height, c.depth);
+            dummy.updateMatrix();
+            carMesh.setMatrixAt(idx, dummy.matrix);
+        });
+
+        carMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(carMesh);
+    });
 }
 
-// ── Smart Grid Power Infrastructure & UI Logic ──────────
+// ── Smart Grid Infrastructure & Otimizações de Rede ─────────
 
 const powerGridObjects = [];
 let powerState = 'normal';
 
-// Helper function to create a realistic utility pole with cross-arm, insulators, transformer & street lamp
-function createDetailedUtilityPole(group, x, z, angleRad = 0, opts = {}) {
+const poleShaftGeo = new THREE.CylinderGeometry(0.12, 0.18, 5.0, 8);
+const poleCrossArmGeo = new THREE.BoxGeometry(1.6, 0.12, 0.12);
+const transformerGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.7, 8);
+const lampHeadGeo = new THREE.BoxGeometry(0.2, 0.08, 0.4);
+const bulbGeo = new THREE.SphereGeometry(0.07, 8, 8);
+
+function collectPoleInstance(group, x, z, angleRad = 0, opts = {}) {
     const { hasTransformer = false, hasStreetlight = true } = opts;
-    const poleGroup = new THREE.Group();
-    poleGroup.position.set(x, 0, z);
-    poleGroup.rotation.y = angleRad;
 
-    // Metal Base Plate
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.2, 8), detailMats.entranceFrame);
-    base.position.y = 0.1;
-    poleGroup.add(base);
+    poleShaftData.push({ x, z, angleRad });
+    if (hasTransformer) poleTransData.push({ x, z, angleRad });
+    if (hasStreetlight) poleLampData.push({ x, z, angleRad });
 
-    // Tapered Wooden/Concrete Main Shaft
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 5.0, 10), powerMats.woodPole);
-    shaft.position.y = 2.6;
-    shaft.castShadow = true;
-    poleGroup.add(shaft);
+    if (hasStreetlight) {
+        const bulbMat = new THREE.MeshStandardMaterial({ color: 0xffeaad, roughness: 0.3, emissive: 0x000000 });
+        const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+        const bulbPos = new THREE.Vector3(0, 4.58, 1.2);
+        bulbPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
+        bulbPos.add(new THREE.Vector3(x, 0, z));
+        bulb.position.copy(bulbPos);
+        bulb.name = "streetLampBulb";
+        group.add(bulb);
+    }
 
-    // Cross-arm (Cruzeta)
-    const crossArm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.12), powerMats.woodPole);
-    crossArm.position.set(0, 4.75, 0);
-    crossArm.castShadow = true;
-    poleGroup.add(crossArm);
-
-    // Diagonal Metal Support Braces
-    const brace1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04), powerMats.metalArm);
-    brace1.position.set(-0.35, 4.42, 0);
-    brace1.rotation.z = Math.PI / 4;
-    poleGroup.add(brace1);
-
-    const brace2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04), powerMats.metalArm);
-    brace2.position.set(0.35, 4.42, 0);
-    brace2.rotation.z = -Math.PI / 4;
-    poleGroup.add(brace2);
-
-    // 3 Ceramic Insulators on top of cross-arm
     const insulatorOffsets = [-0.65, 0, 0.65];
     const insulatorWorldPositions = [];
     insulatorOffsets.forEach(offX => {
-        const ins = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.22, 8), powerMats.insulator);
-        ins.position.set(offX, 4.91, 0);
-        poleGroup.add(ins);
-
-        // Calculate world position for wire connection
         const pt = new THREE.Vector3(offX, 5.02, 0);
         pt.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
         pt.add(new THREE.Vector3(x, 0, z));
         insulatorWorldPositions.push(pt);
     });
 
-    // Optional Transformer Drum
-    if (hasTransformer) {
-        const trans = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.7, 10), powerMats.transformer);
-        trans.position.set(0.3, 3.6, 0);
-        trans.castShadow = true;
-        poleGroup.add(trans);
-
-        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.1), powerMats.metalArm);
-        bracket.position.set(0.16, 3.6, 0);
-        poleGroup.add(bracket);
-    }
-
-    // Street Lamp Fixture facing the road
-    if (hasStreetlight) {
-        const lampArm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.3, 6), powerMats.metalArm);
-        lampArm.position.set(0, 4.35, 0.55);
-        lampArm.rotation.x = Math.PI / 3;
-        poleGroup.add(lampArm);
-
-        const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.4), powerMats.streetLamp);
-        lampHead.position.set(0, 4.65, 1.15);
-        poleGroup.add(lampHead);
-
-        const bulbMat = new THREE.MeshStandardMaterial({ color: 0xffeaad, roughness: 0.3, emissive: 0x000000 });
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), bulbMat);
-        bulb.position.set(0, 4.58, 1.2);
-        bulb.name = "streetLampBulb";
-        poleGroup.add(bulb);
-    }
-
-    group.add(poleGroup);
     return insulatorWorldPositions;
 }
 
-// Helper to create catenary sagging wires between 2 insulator arrays
+function buildInstancedPoles() {
+    const dummy = new THREE.Object3D();
+
+    if (poleShaftData.length > 0) {
+        const shaftMesh = new THREE.InstancedMesh(poleShaftGeo, powerMats.woodPole, poleShaftData.length);
+        const crossArmMesh = new THREE.InstancedMesh(poleCrossArmGeo, powerMats.woodPole, poleShaftData.length);
+        shaftMesh.castShadow = true;
+        crossArmMesh.castShadow = false;
+
+        poleShaftData.forEach((p, i) => {
+            dummy.position.set(p.x, 2.6, p.z);
+            dummy.rotation.set(0, p.angleRad, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            shaftMesh.setMatrixAt(i, dummy.matrix);
+
+            dummy.position.set(p.x, 4.75, p.z);
+            dummy.updateMatrix();
+            crossArmMesh.setMatrixAt(i, dummy.matrix);
+        });
+
+        shaftMesh.instanceMatrix.needsUpdate = true;
+        crossArmMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(shaftMesh);
+        cityGroup.add(crossArmMesh);
+    }
+
+    if (poleTransData.length > 0) {
+        const transMesh = new THREE.InstancedMesh(transformerGeo, powerMats.transformer, poleTransData.length);
+        transMesh.castShadow = false;
+
+        poleTransData.forEach((p, i) => {
+            dummy.position.set(p.x + 0.3, 3.6, p.z);
+            dummy.rotation.set(0, p.angleRad, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            transMesh.setMatrixAt(i, dummy.matrix);
+        });
+
+        transMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(transMesh);
+    }
+
+    if (poleLampData.length > 0) {
+        const lampHeadMesh = new THREE.InstancedMesh(lampHeadGeo, powerMats.streetLamp, poleLampData.length);
+        lampHeadMesh.castShadow = false;
+
+        poleLampData.forEach((p, i) => {
+            const headPos = new THREE.Vector3(0, 4.65, 1.15);
+            headPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), p.angleRad);
+            headPos.add(new THREE.Vector3(p.x, 0, p.z));
+
+            dummy.position.copy(headPos);
+            dummy.rotation.set(0, p.angleRad, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            lampHeadMesh.setMatrixAt(i, dummy.matrix);
+        });
+
+        lampHeadMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(lampHeadMesh);
+    }
+}
+
 function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat, overloadMat, sagAmount = 0.35) {
-    const wireLines = [];
     const count = Math.min(posArray1.length, posArray2.length);
     for (let k = 0; k < count; k++) {
         const p1 = posArray1[k];
         const p2 = posArray2[k];
 
         const points = [];
-        const segments = 10;
+        const segments = 8;
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
@@ -1047,13 +1099,10 @@ function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat
         const line = new THREE.Line(geometry, wireMaterial);
         line.userData = { originalMat: wireMaterial, blackoutMat, overloadMat };
         group.add(line);
-        wireLines.push(line);
     }
-    return wireLines;
 }
 
 function createPowerGrid() {
-    // Stores pole insulator positions per block to link across adjacent blocks
     const blockPolesMap = new Map();
 
     for (let row = 0; row < GRID_SIZE; row += 1) {
@@ -1061,7 +1110,7 @@ function createPowerGrid() {
             const type = getBlockType(row, col);
             const bx = BLOCK_CENTERS[col];
             const bz = BLOCK_CENTERS[row];
-            
+
             const group = new THREE.Group();
             group.name = `powergrid-${row}-${col}`;
             group.userData = { isGridNode: true, row, col, type, active: true };
@@ -1069,7 +1118,6 @@ function createPowerGrid() {
             powerGridObjects.push(group);
 
             if (type === 'commercial' || type === 'hospital' || type === 'mixed') {
-                // Underground glowing lines following street layout
                 const lineGeo = new THREE.BufferGeometry().setFromPoints([
                     new THREE.Vector3(bx - 8.5, 0.22, bz - 8.5),
                     new THREE.Vector3(bx + 8.5, 0.22, bz - 8.5),
@@ -1080,7 +1128,7 @@ function createPowerGrid() {
                 const line = new THREE.Line(lineGeo, powerMats.wireGlowing);
                 line.userData = { originalMat: powerMats.wireGlowing, blackoutMat: powerMats.wireBlackout, overloadMat: powerMats.wireOverload };
                 group.add(line);
-                
+
                 if (noise(row, col, 800) > 0.4) {
                     const crossGeo = new THREE.BufferGeometry().setFromPoints([
                         new THREE.Vector3(bx - 8.5, 0.22, bz),
@@ -1091,20 +1139,15 @@ function createPowerGrid() {
                     group.add(cross);
                 }
             } else {
-                // Overhead Lines: Elegant continuous street poles along East-West sidewalk
                 const hasTrans = noise(row, col, 801) > 0.5;
-                
-                // Place 2 poles per block along sidewalk corridor facing street (z = bz + 8.2)
-                const p1Pos = createDetailedUtilityPole(group, bx - 4.5, bz + 8.2, 0, { hasTransformer: false, hasStreetlight: true });
-                const p2Pos = createDetailedUtilityPole(group, bx + 4.5, bz + 8.2, 0, { hasTransformer: hasTrans, hasStreetlight: true });
 
-                // Connect P1 to P2 within the block with 3 sagging catenary power lines
+                const p1Pos = collectPoleInstance(group, bx - 4.5, bz + 8.2, 0, { hasTransformer: false, hasStreetlight: true });
+                const p2Pos = collectPoleInstance(group, bx + 4.5, bz + 8.2, 0, { hasTransformer: hasTrans, hasStreetlight: true });
+
                 addCatenaryWires(group, p1Pos, p2Pos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.3);
 
-                // Store P2 position so adjacent block can connect
                 blockPolesMap.set(`${row}-${col}`, { p1Pos, p2Pos });
 
-                // Connect to previous adjacent block (col - 1) if it also has overhead poles
                 const prev = blockPolesMap.get(`${row}-${col - 1}`);
                 if (prev) {
                     addCatenaryWires(group, prev.p2Pos, p1Pos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.4);
@@ -1114,24 +1157,26 @@ function createPowerGrid() {
     }
 }
 
+// ── Interatividade Raycaster & Duplo Clique ──────────────────
+
 const raycaster = new THREE.Raycaster();
-raycaster.params.Line.threshold = 1.5; // Make lines easier to click
+raycaster.params.Line.threshold = 1.5;
 const mouse = new THREE.Vector2();
 
 function setupRaycaster() {
     renderer.domElement.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return;
-        
+
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        
+
         raycaster.setFromCamera(mouse, camera);
-        
+
         const interactables = [];
         powerGridObjects.forEach(g => {
             g.children.forEach(c => interactables.push(c));
         });
-        
+
         const intersects = raycaster.intersectObjects(interactables, false);
         if (intersects.length > 0) {
             let target = intersects[0].object;
@@ -1141,6 +1186,18 @@ function setupRaycaster() {
             if (target.parent && target.parent.userData.isGridNode) {
                 triggerBlackout(target.parent);
             }
+        }
+    });
+
+    renderer.domElement.addEventListener('dblclick', (event) => {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const allHits = raycaster.intersectObjects(cityGroup.children, true);
+        if (allHits.length > 0) {
+            const hitPoint = allHits[0].point;
+            focusOnPoint(hitPoint.x, hitPoint.y, hitPoint.z, true);
         }
     });
 }
@@ -1157,8 +1214,7 @@ function triggerBlackout(targetGroup) {
     if (!targetGroup.userData.active) return;
     targetGroup.userData.active = false;
     setWireMaterial(targetGroup, 'blackoutMat');
-    
-    // Turn off street lamp bulbs in this block
+
     targetGroup.traverse(child => {
         if (child.name === "streetLampBulb" && child.material) {
             child.material.emissive.setHex(0x000000);
@@ -1175,6 +1231,7 @@ function simulateOverload() {
 
 let sceneLightState = 'day';
 let originalHemiColor, originalHemiGround, originalSunIntensity;
+
 function forceNight() {
     if (!originalHemiColor) {
         const hemi = scene.children.find(c => c.isHemisphereLight);
@@ -1185,11 +1242,11 @@ function forceNight() {
             originalSunIntensity = sun.intensity;
         }
     }
-    
+
     sceneLightState = 'night';
     const hemi = scene.children.find(c => c.isHemisphereLight);
     const sun = scene.children.find(c => c.isDirectionalLight);
-    
+
     if (hemi) {
         hemi.color.setHex(0x1a2a40);
         hemi.groundColor.setHex(0x0a101a);
@@ -1199,11 +1256,10 @@ function forceNight() {
         sun.intensity = 0.05;
         sun.color.setHex(0x6b80a6);
     }
-    
+
     scene.background.setHex(0x0a1020);
     scene.fog.color.setHex(0x0a1020);
-    
-    // Turn on street lamp bulbs glowing warm gold
+
     powerGridObjects.forEach(group => {
         if (group.userData.active) {
             group.traverse(child => {
@@ -1229,8 +1285,7 @@ function forceNight() {
 function powerPlantFailure() {
     powerState = 'blackout';
     let delay = 0;
-    
-    // Sort from center outwards for a nice cascade effect
+
     const sorted = [...powerGridObjects].sort((a, b) => {
         const d1 = Math.hypot(a.userData.row - GRID_RADIUS, a.userData.col - GRID_RADIUS);
         const d2 = Math.hypot(b.userData.row - GRID_RADIUS, b.userData.col - GRID_RADIUS);
@@ -1240,10 +1295,7 @@ function powerPlantFailure() {
     sorted.forEach(group => {
         setTimeout(() => {
             triggerBlackout(group);
-            // If it's night, turn off building lights in this block
             if (sceneLightState === 'night') {
-                const bx = BLOCK_CENTERS[group.userData.col];
-                const bz = BLOCK_CENTERS[group.userData.row];
                 cityGroup.children.forEach(c => {
                     if (c.name.includes(`${group.userData.row * GRID_SIZE + group.userData.col}`)) {
                         c.traverse(mesh => {
@@ -1274,12 +1326,12 @@ function resetCity() {
             }
         });
     });
-    
+
     if (sceneLightState === 'night') {
         sceneLightState = 'day';
         const hemi = scene.children.find(c => c.isHemisphereLight);
         const sun = scene.children.find(c => c.isDirectionalLight);
-        
+
         if (hemi && originalHemiColor) {
             hemi.color.copy(originalHemiColor);
             hemi.groundColor.copy(originalHemiGround);
@@ -1290,7 +1342,7 @@ function resetCity() {
             sun.color.setHex(0xfff3d7);
         }
     }
-    
+
     cityGroup.traverse(child => {
         if (child.isMesh && child.material && child.material.length) {
             child.material.forEach(mat => {
@@ -1306,17 +1358,18 @@ function resetCity() {
 function setupUI() {
     const toggleBtn = document.getElementById('toggle-panel-btn');
     const panel = document.getElementById('control-panel');
-    
+
     if (toggleBtn && panel) {
         toggleBtn.addEventListener('click', () => {
             panel.classList.toggle('hidden');
         });
     }
-    
+
     document.getElementById('btn-overload')?.addEventListener('click', simulateOverload);
     document.getElementById('btn-night')?.addEventListener('click', forceNight);
     document.getElementById('btn-failure')?.addEventListener('click', powerPlantFailure);
     document.getElementById('btn-reset')?.addEventListener('click', resetCity);
+    document.getElementById('btn-reset-cam')?.addEventListener('click', resetCameraView);
 }
 
 function createLighting() {
@@ -1328,11 +1381,13 @@ function createLighting() {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 40;
-    sun.shadow.camera.far = 620;
-    sun.shadow.camera.left = -300;
-    sun.shadow.camera.right = 300;
-    sun.shadow.camera.top = 300;
-    sun.shadow.camera.bottom = -300;
+    sun.shadow.camera.far = 650;
+    sun.shadow.camera.left = -260;
+    sun.shadow.camera.right = 260;
+    sun.shadow.camera.top = 260;
+    sun.shadow.camera.bottom = -260;
+    sun.shadow.bias = -0.0003;
+    sun.shadow.normalBias = 0.02;
     scene.add(sun);
 }
 
@@ -1343,40 +1398,51 @@ function initializeScene() {
     createTrafficHints();
     createLighting();
     createPowerGrid();
+
+    buildInstancedTrees();
+    buildInstancedBases();
+    buildInstancedPoles();
+
     setupRaycaster();
+    setupUI();
     window.smartCityStats = cityStats;
 }
 
 initializeScene();
 
+// ── Loop de Renderização com Câmera e Neblina Adaptativas ───
+
 function animate() {
     requestAnimationFrame(animate);
 
-    // Ajuste dinâmico da câmera e ambientação baseado na distância (proximidade)
+    if (isTransitioningCam && targetFocusPoint) {
+        controls.target.lerp(targetFocusPoint, 0.08);
+        if (targetCamPos) {
+            camera.position.lerp(targetCamPos, 0.08);
+        }
+        if (controls.target.distanceTo(targetFocusPoint) < 0.1 && (!targetCamPos || camera.position.distanceTo(targetCamPos) < 0.3)) {
+            isTransitioningCam = false;
+        }
+    }
+
     if (controls && scene.fog) {
         const distance = controls.getDistance();
-        // Normaliza a distância entre 0 (mais perto) e 1 (mais longe)
         const t = Math.max(0, Math.min(1, (distance - controls.minDistance) / (controls.maxDistance - controls.minDistance)));
 
-        // 1. Câmera: Movimentos mais suaves e precisos quando perto, mais rápidos quando longe
-        controls.rotateSpeed = 0.15 + (t * 0.65); // 0.15 perto, 0.8 longe
-        controls.panSpeed = 0.2 + (t * 0.8);      // 0.2 perto, 1.0 longe
-        controls.zoomSpeed = 0.4 + (t * 0.6);     // 0.4 perto, 1.0 longe
+        controls.rotateSpeed = 0.18 + (t * 0.55);
+        controls.panSpeed = 0.22 + (t * 0.72);
+        controls.zoomSpeed = 0.38 + (t * 0.58);
 
-        // 2. Ambientação (Neblina): 
-        // Quando perto (nível da rua), a neblina começa mais cedo para dar noção de escala e profundidade
-        // Quando longe (vista aérea), a neblina se afasta para permitir a visão geral da cidade
-        scene.fog.near = 80 + (t * 240);  // de 80 até 320
-        scene.fog.far = 280 + (t * 580);  // de 280 até 860
-        
-        // Ajuste sutil na cor da neblina/fundo simulando dispersão atmosférica (mais denso quando perto)
-        // Cor base (longe): 0xbfd3e6 (191, 211, 230)
-        // Cor densa (perto): 0xa6c2da (166, 194, 218)
-        const r = 166 + t * (191 - 166);
-        const g = 194 + t * (211 - 194);
-        const b = 218 + t * (230 - 218);
-        scene.background.setRGB(r / 255, g / 255, b / 255);
-        scene.fog.color.setRGB(r / 255, g / 255, b / 255);
+        if (sceneLightState === 'day') {
+            scene.fog.near = 70 + (t * 250);
+            scene.fog.far = 260 + (t * 600);
+
+            const r = 166 + t * (191 - 166);
+            const g = 194 + t * (211 - 194);
+            const b = 218 + t * (230 - 218);
+            scene.background.setRGB(r / 255, g / 255, b / 255);
+            scene.fog.color.setRGB(r / 255, g / 255, b / 255);
+        }
     }
 
     controls.update();
