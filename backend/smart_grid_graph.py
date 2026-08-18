@@ -100,6 +100,7 @@ class SmartGridGraph:
                 capacidade_maxima_kw=edge.capacidade_maxima_kw,
                 distancia_km=edge.distancia_km,
                 status_ativa=True,
+                fluxo_kw_atual=0.0,
             )
 
     def simular_falha(self, origem: str, destino: str) -> None:
@@ -193,3 +194,63 @@ class SmartGridGraph:
             active_graph.add_edge(origem, destino, **data, custo_rota=route_cost)
 
         return active_graph
+
+    def nos_desenergizados(self) -> list[str]:
+        """Retorna lista de nós que não possuem caminho ativo até nenhuma subestação."""
+        active_graph = self._active_transmission_graph()
+        subestacoes = [
+            n for n, d in active_graph.nodes(data=True) if d.get("is_subestacao")
+        ]
+        
+        nos_desenergizados = []
+        for node_id in active_graph.nodes():
+            if active_graph.nodes[node_id].get("is_subestacao"):
+                continue
+            
+            tem_caminho = False
+            for sub in subestacoes:
+                if nx.has_path(active_graph, sub, node_id):
+                    tem_caminho = True
+                    break
+                    
+            if not tem_caminho:
+                nos_desenergizados.append(node_id)
+                
+        return nos_desenergizados
+
+    def calcular_fluxo_arestas(self) -> None:
+        """Estima o fluxo de kW em cada aresta ativa."""
+        # Reseta os fluxos
+        for u, v in self.graph.edges():
+            self.graph[u][v]["fluxo_kw_atual"] = 0.0
+
+        active_graph = self._active_transmission_graph()
+        subestacoes = [
+            n for n, d in active_graph.nodes(data=True) if d.get("is_subestacao")
+        ]
+
+        # Para cada nó não-subestação, acha a rota de menor custo até uma subestação
+        for node_id in active_graph.nodes():
+            if active_graph.nodes[node_id].get("is_subestacao"):
+                continue
+            
+            demanda = active_graph.nodes[node_id].get("demanda_kw_atual", 0.0)
+            
+            best_path = None
+            best_cost = float('inf')
+            
+            for sub in subestacoes:
+                if nx.has_path(active_graph, sub, node_id):
+                    path = nx.shortest_path(active_graph, sub, node_id, weight="custo_rota")
+                    cost = nx.path_weight(active_graph, path, weight="custo_rota")
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_path = path
+                        
+            if best_path:
+                # Adiciona a demanda desse nó ao longo das arestas do caminho
+                for i in range(len(best_path) - 1):
+                    u = best_path[i]
+                    v = best_path[i+1]
+                    if self.graph.has_edge(u, v):
+                        self.graph[u][v]["fluxo_kw_atual"] += abs(demanda)
