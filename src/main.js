@@ -511,6 +511,33 @@ function getBlockType(row, col) {
     return n > 0.65 ? 'mixed' : 'residential';
 }
 
+const backendNodePositions = {};
+
+function getBlockBackendId(row, col, type) {
+    if (type === 'power_plant') return 'Subestacao_Central';
+    if (type === 'solar_farm') return 'Fazenda_Solar';
+    if (type === 'hospital') {
+        if (row === GRID_RADIUS - 3 && col === GRID_RADIUS - 1) return 'Hospital_Prontomed';
+    }
+    
+    // Subestações auxiliares do backend
+    if (row === 3 && col === 3) return 'Subestacao_Norte';
+    if (row === GRID_SIZE - 4 && col === GRID_SIZE - 4) return 'Subestacao_Sul';
+    
+    // Bairros residenciais
+    if (row === 2 && col === 5) return 'Bairro_Residencial_A';
+    if (row === 12 && col === 3) return 'Bairro_Residencial_B';
+    
+    // Zonas comerciais/industriais/serviços
+    if (row === 6 && col === 6) return 'Centro_Comercial';
+    if (row === 7 && col === 8) return 'Shopping_Metropolitano';
+    if (row === 12 && col === 11) return 'Zona_Industrial_A';
+    if (row === GRID_RADIUS + 1 && col === GRID_RADIUS + 1) return 'Data_Center';
+    if (row === 5 && col === 11) return 'Escolas';
+    
+    return null;
+}
+
 function createDistricts() {
     for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let col = 0; col < GRID_SIZE; col += 1) {
@@ -526,6 +553,10 @@ function createDistricts() {
 
             createBlockBase(block);
 
+            const initialChildrenCount = cityGroup.children.length;
+            const backendId = getBlockBackendId(row, col, block.type);
+            block.backendId = backendId;
+
             if (block.type === 'residential') createResidentialBlock(block);
             else if (block.type === 'mixed') createMixedUrbanBlock(block);
             else if (block.type === 'commercial') createCommercialBlock(block);
@@ -537,6 +568,15 @@ function createDistricts() {
             else if (block.type === 'solar_farm') createSolarFarm(block);
             else if (block.type === 'wind_farm') createWindFarm(block);
             else if (block.type === 'substation') createSubstation(block);
+
+            // Se um grupo foi adicionado, atribui o backendId e guarda a posição
+            if (cityGroup.children.length > initialChildrenCount) {
+                const addedElement = cityGroup.children[cityGroup.children.length - 1];
+                if (addedElement.isGroup && backendId) {
+                    addedElement.userData.backendId = backendId;
+                    backendNodePositions[backendId] = new THREE.Vector3(block.x, 8.0, block.z);
+                }
+            }
         }
     }
 }
@@ -1220,6 +1260,62 @@ function createPowerGrid() {
     }
 }
 
+function createTransmissionLines() {
+    const transmissionEdges = [
+        { u: 'Subestacao_Central', v: 'Subestacao_Norte' },
+        { u: 'Subestacao_Central', v: 'Subestacao_Sul' },
+        { u: 'Subestacao_Central', v: 'Hospital_Prontomed' },
+        { u: 'Subestacao_Norte', v: 'Bairro_Residencial_A' },
+        { u: 'Subestacao_Norte', v: 'Centro_Comercial' },
+        { u: 'Subestacao_Norte', v: 'Data_Center' },
+        { u: 'Subestacao_Sul', v: 'Bairro_Residencial_B' },
+        { u: 'Subestacao_Sul', v: 'Shopping_Metropolitano' },
+        { u: 'Subestacao_Sul', v: 'Zona_Industrial_A' },
+        { u: 'Subestacao_Sul', v: 'Escolas' },
+        { u: 'Fazenda_Solar', v: 'Subestacao_Norte' },
+        { u: 'Fazenda_Solar', v: 'Subestacao_Sul' },
+        { u: 'Hospital_Prontomed', v: 'Data_Center' },
+        { u: 'Centro_Comercial', v: 'Shopping_Metropolitano' },
+        { u: 'Bairro_Residencial_A', v: 'Bairro_Residencial_B' },
+        { u: 'Zona_Industrial_A', v: 'Shopping_Metropolitano' }
+    ];
+
+    const group = new THREE.Group();
+    group.name = 'transmission_lines';
+    group.userData = { isGridNode: true, active: true };
+    cityGroup.add(group);
+    powerGridObjects.push(group);
+
+    transmissionEdges.forEach(edge => {
+        const p1 = backendNodePositions[edge.u];
+        const p2 = backendNodePositions[edge.v];
+
+        if (p1 && p2) {
+            const points = [];
+            const segments = 16;
+            const sagAmount = 4.0;
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
+                const z = THREE.MathUtils.lerp(p1.z, p2.z, t);
+                const yLinear = THREE.MathUtils.lerp(p1.y, p2.y, t);
+                const sag = 4 * sagAmount * t * (1 - t);
+                points.push(new THREE.Vector3(x, yLinear - sag, z));
+            }
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, powerMats.wireGlowing);
+            line.userData = { 
+                originalMat: powerMats.wireGlowing, 
+                blackoutMat: powerMats.wireBlackout, 
+                overloadMat: powerMats.wireOverload,
+                backendEdgeId: `${edge.u}-${edge.v}`
+            };
+            group.add(line);
+        }
+    });
+}
+
 // ── Raycaster & Cliques ─────────────────────────────────────
 
 const raycaster = new THREE.Raycaster();
@@ -1466,6 +1562,7 @@ function initializeScene() {
     createTrafficHints();
     createLighting();
     createPowerGrid();
+    createTransmissionLines();
 
     buildInstancedTrees();
     buildInstancedBases();
