@@ -1764,30 +1764,42 @@ function setupUI() {
     }
 
     document.getElementById('btn-tick')?.addEventListener('click', () => {
-        citySimulator.tick(1);
+        const logs = citySimulator.tick(1);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-overload')?.addEventListener('click', () => {
-        citySimulator.alterarClima('chuvoso');
-        citySimulator.tick(2);
         simulateOverload();
+        
+        const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
+        if (noIndustria) {
+            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
+            noIndustria.demanda_kw_atual = baseDemand * 2.5;
+        }
+        
+        const logs = demandResponseAgent(citySimulator.grafo);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-night')?.addEventListener('click', () => {
         forceNight();
-        citySimulator.estado.hora = 20;
-        citySimulator.tick(0);
+        citySimulator.estado.hora = 19;
+        targetDecimalTime = 19.0;
+        
+        const logs = peakHourAgent(citySimulator.grafo, 19);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-failure')?.addEventListener('click', () => {
-        const logs = citySimulator.simularFalha('Subestacao_Central', 'Subestacao_Norte');
         powerPlantFailure();
-        console.log('[UI] Falha injetada. Self-Healing respondeu:', logs);
+        const logs = citySimulator.simularFalha('Subestacao_Central', 'Hospital_Prontomed');
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-reset')?.addEventListener('click', () => {
         resetCity();
-        citySimulator.resetar();
+        const logs = citySimulator.resetar();
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
@@ -2212,69 +2224,6 @@ function handleResize() {
 window.addEventListener('resize', handleResize);
 animate();
 
-// ═══════════════════════════════════════════════════════════════
-// CONEXÃO DOS BOTÕES DO PAINEL AO MOTOR LÓGICO (smartAgents.js)
-// ═══════════════════════════════════════════════════════════════
-
-const grafo = citySimulator.grafo;
-
-/**
- * Função genérica para engatilhar a atualização visual e sincronizar o HUD
- */
-function atualizarPainelHUD() {
-    if (typeof syncSceneWithBackend === 'function') {
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, []);
-    }
-    console.log('[HUD] Painel HUD atualizado.');
-}
-
-// 1. Botão: Forçar Pico Noturno (19h)
-const btnForcarNoite = document.getElementById('btn-forcar-noite');
-if (btnForcarNoite) {
-    btnForcarNoite.addEventListener('click', () => {
-        targetDecimalTime = 19.0;
-        if (citySimulator.estado) citySimulator.estado.hora = 19;
-        console.log('[Painel] Botão Forçar Pico Noturno clicado (transição gradual para 19:00).');
-        peakHourAgent(grafo, 19);
-        atualizarPainelHUD();
-    });
-}
-
-// 2. Botão: Avançar Hora (0 a 23 com minutos)
-const btnAvancarHora = document.getElementById('btn-avancar-hora');
-if (btnAvancarHora) {
-    btnAvancarHora.addEventListener('click', () => {
-        const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
-        targetDecimalTime = proximaHora;
-        if (citySimulator.estado) citySimulator.estado.hora = proximaHora;
-        console.log(`[Painel] Botão Avançar Hora clicado. Transição gradual para ${proximaHora}:00.`);
-        peakHourAgent(grafo, proximaHora);
-        atualizarPainelHUD();
-    });
-}
-
-// 3. Botão: Sobrecarga Industrial
-const btnSobrecarga = document.getElementById('btn-sobrecarga');
-if (btnSobrecarga) {
-    btnSobrecarga.addEventListener('click', () => {
-        const noIndustria = grafo.nodes.get('Zona_Industrial_A');
-        if (noIndustria) {
-            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
-            noIndustria.demanda_kw_atual = baseDemand * 2.5;
-            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
-        }
-        demandResponseAgent(grafo);
-        atualizarPainelHUD();
-    });
-}
-
-// 4. Botão: Falha na Usina (Rompimento de Aresta / Self-Healing)
-const btnFalhaUsina = document.getElementById('btn-falha-usina');
-if (btnFalhaUsina) {
-    btnFalhaUsina.addEventListener('click', () => {
-        console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
-        grafo.romperAresta('Subestacao_Central', 'Hospital_Prontomed');
-        atualizarPainelHUD();
     });
 }
 
