@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CitySimulator } from './smartAgents.js';
 
 const container = document.getElementById('canvas-container');
 
@@ -1512,10 +1513,31 @@ function setupUI() {
         });
     }
 
-    document.getElementById('btn-overload')?.addEventListener('click', simulateOverload);
-    document.getElementById('btn-night')?.addEventListener('click', forceNight);
-    document.getElementById('btn-failure')?.addEventListener('click', powerPlantFailure);
-    document.getElementById('btn-reset')?.addEventListener('click', resetCity);
+    document.getElementById('btn-overload')?.addEventListener('click', () => {
+        // Simula sobrecarga alterando o clima para "chuvoso" (reduz geração solar) e avança 2h no pico
+        citySimulator.alterarClima('chuvoso');
+        citySimulator.tick(2);
+        simulateOverload(); // mantém efeito visual de fios amarelos globalmente
+    });
+
+    document.getElementById('btn-night')?.addEventListener('click', () => {
+        forceNight();
+        // Sincroniza o motor: avança para as 20h (horário de pico noturno)
+        citySimulator.estado.hora = 20;
+        citySimulator.tick(0);
+    });
+
+    document.getElementById('btn-failure')?.addEventListener('click', () => {
+        // Simula corte da linha principal da Usina → Subestação Norte
+        const logs = citySimulator.simularFalha('Subestacao_Central', 'Subestacao_Norte');
+        powerPlantFailure(); // cascata visual nos fios
+        console.log('[UI] Falha injetada. Self-Healing respondeu:', logs);
+    });
+
+    document.getElementById('btn-reset')?.addEventListener('click', () => {
+        resetCity();        // reseta luzes e fios no Three.js
+        citySimulator.resetar(); // reseta todo o motor de IA
+    });
 
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
         setCameraMode(cameraMode === 'fly' ? 'orbit' : 'fly');
@@ -1574,7 +1596,102 @@ function initializeScene() {
     window.smartCityStats = cityStats;
 }
 
+// ── Sincronização Visual com o Motor de IA ───────────────────
+
+// Dicionário de tradução: ID interno do grafo JS → userData.backendId no Three.js
+// (os dois são idênticos neste projeto — o mapeamento já foi alinhado)
+const ID_MAP = {
+    'Subestacao_Central':   'Subestacao_Central',
+    'Subestacao_Norte':     'Subestacao_Norte',
+    'Subestacao_Sul':       'Subestacao_Sul',
+    'Hospital_Prontomed':   'Hospital_Prontomed',
+    'Bairro_Residencial_A': 'Bairro_Residencial_A',
+    'Bairro_Residencial_B': 'Bairro_Residencial_B',
+    'Centro_Comercial':     'Centro_Comercial',
+    'Shopping_Metropolitano':'Shopping_Metropolitano',
+    'Zona_Industrial_A':    'Zona_Industrial_A',
+    'Data_Center':          'Data_Center',
+    'Escolas':              'Escolas',
+    'Fazenda_Solar':        'Fazenda_Solar'
+};
+
+// Estado de emissão salvo para restaurar brilho de janelas à noite
+const _savedEmissive = new Map();
+
+function syncSceneWithBackend(grafo, estado, logs) {
+    if (logs && logs.length > 0) {
+        console.groupCollapsed(`[SmartGrid] Tick ${estado.hora}h — ${logs.length} ação(ões)`);
+        logs.forEach(l => console.log(l));
+        console.groupEnd();
+    }
+
+    // ── 1. Sincronizar Nós (Apagão por bairro) ──────────────
+    for (const [nodeId, node] of grafo.nodes) {
+        const threeId = ID_MAP[nodeId];
+        if (!threeId) continue;
+
+        const bloco3D = cityGroup.children.find(
+            c => c.isGroup && c.userData?.backendId === threeId
+        );
+        if (!bloco3D) continue;
+
+        bloco3D.traverse(child => {
+            if (!child.isMesh || !child.material) return;
+
+            if (!node.status_energizado) {
+                // APAGÃO: remove toda emissão e escurece
+                if (child.material.emissive) child.material.emissive.setHex(0x000000);
+                if (child.material.emissiveIntensity !== undefined) child.material.emissiveIntensity = 0;
+            } else {
+                // ENERGIZADO: restaura emissão da janela se for modo noite
+                if (sceneLightState === 'night' && child.material.map && child.material.emissive) {
+                    child.material.emissive.setHex(0x555544);
+                    child.material.emissiveIntensity = 1.0;
+                }
+            }
+        });
+    }
+
+    // ── 2. Sincronizar Linhas de Transmissão (Sobrecarga / Falha) ──
+    const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
+    if (transLinesGroup) {
+        for (const edge of grafo.edges.values()) {
+            const edgeId = `${edge.origem}-${edge.destino}`;
+            const linha = transLinesGroup.children.find(
+                l => l.userData?.backendEdgeId === edgeId
+            );
+            if (!linha) continue;
+
+            const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
+
+            if (!edge.status_ativa) {
+                linha.material = powerMats.wireBlackout;
+            } else if (taxaCarga > 0.90) {
+                linha.material = powerMats.wireOverload; // laranja = superaquecimento
+            } else {
+                linha.material = powerMats.wireGlowing;  // azul = normal ativo
+            }
+        }
+    }
+
+    // ── 3. Atualizar HUD com dados da simulação ──────────────
+    const hudHora = document.getElementById('hud-sim-hora');
+    const hudDemanda = document.getElementById('hud-sim-demanda');
+    const hudClima = document.getElementById('hud-sim-clima');
+    if (hudHora)    hudHora.textContent    = `${String(estado.hora).padStart(2,'0')}:00`;
+    if (hudDemanda) hudDemanda.textContent = `${grafo.demandaTotalKw().toFixed(0)} kW`;
+    if (hudClima)   hudClima.textContent   = estado.clima;
+}
+
+// ── Instanciação do Simulador ─────────────────────────────────
+// O CitySimulator é criado ANTES de initializeScene() para que
+// setupUI() já possa referenciar seus métodos.
+const citySimulator = new CitySimulator({ onSync: syncSceneWithBackend });
+
 initializeScene();
+
+// Primeiro tick logo ao carregar — popula o HUD e a cena com o estado das 07h
+citySimulator.tick(0);
 
 // ── Loop de Renderização 60+ FPS & Física do Voo ────────────
 
