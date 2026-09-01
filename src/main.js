@@ -1,11 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-<<<<<<< HEAD
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
 import { VFXManager } from './vfx.js';
-=======
-import { CitySimulator } from './smartAgents.js';
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
 
 const container = document.getElementById('canvas-container');
 
@@ -1540,18 +1536,12 @@ function createTransmissionLines() {
                 originalMat: powerMats.wireGlowing, 
                 blackoutMat: powerMats.wireBlackout, 
                 overloadMat: powerMats.wireOverload,
-<<<<<<< HEAD
                 criticalMat: powerMats.wireCritical,
                 backendEdgeId: `${edge.u}-${edge.v}`,
                 u: edge.u,
                 v: edge.v,
                 currentSpeed: 5.0, // Velocidade padrão do dash (multiplicador)
                 broken: false
-=======
-                backendEdgeId: `${edge.u}-${edge.v}`,
-                u: edge.u,
-                v: edge.v
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
             };
             line.matrixAutoUpdate = false;
             line.updateMatrix();
@@ -1575,18 +1565,6 @@ function setupRaycaster() {
 
         raycaster.setFromCamera(mouse, camera);
 
-<<<<<<< HEAD
-        const interactables = [...cityGroup.children, ...powerGridObjects];
-        // Encontrar objetos com backendId ou backendEdgeId
-        const intersects = raycaster.intersectObjects(interactables, true);
-        
-        let foundHover = null;
-        for (let i = 0; i < intersects.length; i++) {
-            let obj = intersects[i].object;
-            // Subir na hierarquia até achar um com ID
-            while (obj && !obj.userData?.backendId && !obj.userData?.backendEdgeId && obj !== scene) {
-                obj = obj.parent;
-=======
         const interactables = [];
         powerGridObjects.forEach(g => {
             g.children.forEach(c => interactables.push(c));
@@ -1604,7 +1582,6 @@ function setupRaycaster() {
 
             while (target.parent && !target.parent.userData.isGridNode) {
                 target = target.parent;
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
             }
             if (target.parent && target.parent.userData.isGridNode) {
                 triggerBlackout(target.parent);
@@ -1946,7 +1923,6 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
             if (!edge.status_ativa) {
                 linha.material = powerMats.wireBlackout;
-<<<<<<< HEAD
                 linha.userData.broken = true;
             } else if (taxaCarga >= 0.95) {
                 linha.material = powerMats.wireCritical; // Vermelho
@@ -1960,12 +1936,6 @@ function syncSceneWithBackend(grafo, estado, logs) {
                 linha.material = powerMats.wireGlowing;  // Azul neon
                 linha.userData.currentSpeed = 5.0;       // Velocidade normal
                 linha.userData.broken = false;
-=======
-            } else if (taxaCarga > 0.90) {
-                linha.material = powerMats.wireOverload;
-            } else {
-                linha.material = powerMats.wireGlowing;
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
             }
         }
     }
@@ -2072,7 +2042,6 @@ function animate() {
         orbitControls.update();
     }
 
-<<<<<<< HEAD
     // Atualizar animação dos fios
     const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
     if (transLinesGroup) {
@@ -2086,7 +2055,7 @@ function animate() {
 
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
     updateSmoothDayNightCycle(delta);
-=======
+
     if (scene.fog && sceneLightState === 'day') {
         const altitude = camera.position.y;
         const t = Math.max(0, Math.min(1, altitude / 250));
@@ -2099,7 +2068,6 @@ function animate() {
         scene.background.setRGB(r / 255, g / 255, b / 255);
         scene.fog.color.setRGB(r / 255, g / 255, b / 255);
     }
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
 
     renderer.render(scene, camera);
 }
