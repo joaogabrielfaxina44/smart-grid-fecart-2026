@@ -255,7 +255,7 @@ const powerMats = {
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
 };
 
-// ── Pool Pré-gerado de Texturas de Fachadas (Zero Sobrecarga de GPU) ──
+// ── Pool Pré-gerado de Texturas de Fachadas Crisp & Nítidas (HD + Anisotropic) ──
 
 const sharedFacadeMaterials = {
     residential: [],
@@ -266,6 +266,8 @@ const sharedFacadeMaterials = {
 };
 
 function initSharedFacadeMaterials() {
+    const maxAnisotropy = renderer ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1;
+
     const wallColors = {
         residential: ['#d8c9b0', '#c9c3b4', '#e1d8c8', '#c6ad99'],
         office: ['#b8bcc0', '#a0a4a8', '#c4c1b7', '#9ea5a8'],
@@ -276,12 +278,13 @@ function initSharedFacadeMaterials() {
 
     const windowColors = ['#1a2838', '#1e2e3e', '#222e3a', '#182434'];
     const litColors = ['#d4c87a', '#c8bc6a', '#a0b8d0', '#dcc468'];
+    const doorColor = '#4a3625';
 
     Object.keys(wallColors).forEach(type => {
         const pal = wallColors[type];
         pal.forEach((baseColor, idx) => {
-            const cw = 128;
-            const ch = 128;
+            const cw = 256;
+            const ch = 256;
             const canvas = document.createElement('canvas');
             canvas.width = cw;
             canvas.height = ch;
@@ -290,24 +293,84 @@ function initSharedFacadeMaterials() {
             ctx.fillStyle = baseColor;
             ctx.fillRect(0, 0, cw, ch);
 
-            const isGlass = type === 'glass';
-            const cols = isGlass ? 6 : 5;
-            const rows = isGlass ? 8 : 6;
-            const ww = Math.round(cw / cols * 0.6);
-            const wh = Math.round(ch / rows * 0.55);
-            const spX = Math.round(cw / cols);
-            const spY = Math.round(ch / rows);
+            if (type === 'residential') {
+                // Casas residenciais reais: 1 ou 2 janelas por andar + porta de entrada estilizada no térreo
+                const cols = 2;
+                const rows = 2;
+                const spX = cw / cols;
+                const spY = ch / rows;
+                const ww = spX * 0.42;
+                const wh = spY * 0.45;
 
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const wx = Math.round(c * spX + (spX - ww) / 2);
-                    const wy = Math.round(r * spY + (spY - wh) / 2);
-                    const isLit = (r + c + idx) % 5 === 0;
-                    ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
-                    ctx.fillRect(wx, wy, ww, wh);
-                    ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(wx, wy, ww, wh);
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (r === 1 && c === 0) {
+                            // Porta de madeira realista
+                            const dw = spX * 0.36;
+                            const dh = spY * 0.65;
+                            const dx = c * spX + (spX - dw) / 2;
+                            const dy = r * spY + (spY - dh);
+                            ctx.fillStyle = doorColor;
+                            ctx.fillRect(dx, dy, dw, dh);
+                            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(dx, dy, dw, dh);
+                            // Maçaneta dourada
+                            ctx.fillStyle = '#d4af37';
+                            ctx.beginPath();
+                            ctx.arc(dx + dw * 0.8, dy + dh * 0.55, 3, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else {
+                            // Janela residencial bonita com moldura e vidros
+                            const wx = c * spX + (spX - ww) / 2;
+                            const wy = r * spY + (spY - wh) / 2;
+                            const isLit = (r + c + idx) % 4 === 0;
+
+                            // Moldura branca
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(wx - 3, wy - 3, ww + 6, wh + 6);
+
+                            // Vidro da janela
+                            ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
+                            ctx.fillRect(wx, wy, ww, wh);
+
+                            // Divisor de vidro
+                            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            ctx.moveTo(wx + ww / 2, wy);
+                            ctx.lineTo(wx + ww / 2, wy + wh);
+                            ctx.moveTo(wx, wy + wh / 2);
+                            ctx.lineTo(wx + ww, wy + wh / 2);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            } else {
+                // Outros edifícios (escritórios, lojas, vidros, indústrias)
+                const isGlass = type === 'glass';
+                const isShop = type === 'shop';
+                const isIndustrial = type === 'industrial';
+
+                const cols = isGlass ? 6 : (isShop ? 3 : (isIndustrial ? 3 : 5));
+                const rows = isGlass ? 8 : (isShop ? 4 : (isIndustrial ? 3 : 6));
+                const ww = Math.round(cw / cols * 0.6);
+                const wh = Math.round(ch / rows * 0.55);
+                const spX = Math.round(cw / cols);
+                const spY = Math.round(ch / rows);
+
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const wx = Math.round(c * spX + (spX - ww) / 2);
+                        const wy = Math.round(r * spY + (spY - wh) / 2);
+                        const isLit = (r + c + idx) % 5 === 0;
+
+                        ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
+                        ctx.fillRect(wx, wy, ww, wh);
+                        ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(wx, wy, ww, wh);
+                    }
                 }
             }
 
@@ -315,7 +378,12 @@ function initSharedFacadeMaterials() {
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
             texture.colorSpace = THREE.SRGBColorSpace;
+            texture.generateMipmaps = true;
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.anisotropy = maxAnisotropy;
 
+            const isGlass = type === 'glass';
             const mat = new THREE.MeshStandardMaterial({
                 map: texture,
                 roughness: isGlass ? 0.26 : 0.8,
