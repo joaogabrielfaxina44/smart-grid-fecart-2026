@@ -9,6 +9,8 @@ const container = document.getElementById('canvas-container');
 
 let currentDecimalTime = 7.0; // Hora inicial (07:00)
 let targetDecimalTime = 7.0;
+let isTimeRunning = true; // Simulação de tempo contínua ativa por padrão
+let timeSpeed = 0.08; // 1 hora virtual a cada ~12.5s (minutos avançam continuamente e de forma fluida)
 
 const scene = new THREE.Scene();
 const skyColorDay = new THREE.Color(0xbfd3e6);
@@ -253,13 +255,51 @@ const powerMats = {
     metalArm: new THREE.MeshStandardMaterial({ color: 0x3d4146, roughness: 0.5, metalness: 0.4 }),
     transformer: new THREE.MeshStandardMaterial({ color: 0x32373d, roughness: 0.4, metalness: 0.5 }),
     streetLamp: new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5 }),
+    streetLampBulb: new THREE.MeshStandardMaterial({
+        color: 0xffeaad,
+        roughness: 0.2,
+        emissive: 0xffa024,
+        emissiveIntensity: 0.0
+    }),
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
     wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }),
     wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }),
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
 };
 
-// ── Pool Pré-gerado de Texturas de Fachadas Crisp & Nítidas (HD + Anisotropic) ──
+// ── Textura Radial de Iluminação Pública no Chão (Warm Light Pool) ──
+
+function createLightPoolTexture() {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    grad.addColorStop(0, 'rgba(255, 230, 140, 1.0)');
+    grad.addColorStop(0.25, 'rgba(255, 180, 60, 0.7)');
+    grad.addColorStop(0.65, 'rgba(255, 140, 20, 0.2)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+const groundLightPoolTexture = createLightPoolTexture();
+const groundLightPoolMaterial = new THREE.MeshBasicMaterial({
+    map: groundLightPoolTexture,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+});
+
+// ── Pool de Fachadas com Mapas Emissivos Dedicados (Janelas Acessas à Noite) ──
+
+const allFacadeMaterials = [];
 
 const sharedFacadeMaterials = {
     residential: [],
@@ -273,58 +313,71 @@ function initSharedFacadeMaterials() {
     const maxAnisotropy = renderer ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1;
 
     const wallColors = {
-        residential: ['#d8c9b0', '#c9c3b4', '#e1d8c8', '#c6ad99'],
-        office: ['#b8bcc0', '#a0a4a8', '#c4c1b7', '#9ea5a8'],
-        glass: ['#6a8a9a', '#7a9aaa', '#5a7a8a'],
-        shop: ['#d8c9b0', '#c4b8a0', '#e1d8c8'],
-        industrial: ['#9c9688', '#a8a298', '#8a8880']
+        residential: ['#d6c9b2', '#c8c1b0', '#e0d6c4', '#c5ad96'],
+        office: ['#353e48', '#3f4954', '#a6abb2', '#49535f'],
+        glass: ['#42627a', '#36536b', '#2a4458'],
+        shop: ['#dcd2bf', '#c8bfa9', '#ded7c8'],
+        industrial: ['#8c867c', '#989288', '#7c7a74']
     };
 
-    const windowColors = ['#1a2838', '#1e2e3e', '#222e3a', '#182434'];
-    const litColors = ['#d4c87a', '#c8bc6a', '#a0b8d0', '#dcc468'];
-    const doorColor = '#4a3625';
+    const windowDayColors = ['#1a2938', '#14202c', '#223446', '#1c2d3e'];
+    const litWindowColors = ['#ffd66b', '#ffbe42', '#ffe799', '#cce6ff', '#ffb03a'];
+    const doorColor = '#3a2717';
 
     Object.keys(wallColors).forEach(type => {
         const pal = wallColors[type];
         pal.forEach((baseColor, idx) => {
             const cw = 256;
             const ch = 256;
+
+            // Canvas 1: Diffuse (Dia)
             const canvas = document.createElement('canvas');
             canvas.width = cw;
             canvas.height = ch;
             const ctx = canvas.getContext('2d');
 
+            // Canvas 2: Emissive (Noite - Fundo 100% Preto, apenas janelas acesas emitem luz!)
+            const canvasEmissive = document.createElement('canvas');
+            canvasEmissive.width = cw;
+            canvasEmissive.height = ch;
+            const ctxEm = canvasEmissive.getContext('2d');
+
             ctx.fillStyle = baseColor;
             ctx.fillRect(0, 0, cw, ch);
 
+            ctxEm.fillStyle = '#000000';
+            ctxEm.fillRect(0, 0, cw, ch);
+
             if (type === 'residential') {
-                // Casas residenciais com apenas 1 ou 2 janelas por fachada + porta de entrada estilizada
+                // Base e rodapé sutil da casa
+                ctx.fillStyle = 'rgba(0,0,0,0.12)';
+                ctx.fillRect(0, ch - 12, cw, 12);
+                ctx.fillRect(0, 0, cw, 6);
+
                 const drawDoor = (dx, dy, dw = 40, dh = 75) => {
                     ctx.fillStyle = doorColor;
                     ctx.fillRect(dx, dy, dw, dh);
-                    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+                    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(dx, dy, dw, dh);
                     // Maçaneta dourada
-                    ctx.fillStyle = '#d4af37';
+                    ctx.fillStyle = '#f59e0b';
                     ctx.beginPath();
                     ctx.arc(dx + dw * 0.78, dy + dh * 0.55, 3, 0, Math.PI * 2);
                     ctx.fill();
                 };
 
-                const drawWin = (wx, wy, ww = 52, wh = 60, windowIdx = 0) => {
-                    const isLit = (idx + windowIdx) % 3 === 0;
-
-                    // Moldura branca
+                const drawResidentialWin = (wx, wy, ww = 52, wh = 60, isLit = false, glowColor = '#ffd269') => {
+                    // Moldura branca no diffuse
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(wx - 3, wy - 3, ww + 6, wh + 6);
 
-                    // Vidro da janela
-                    ctx.fillStyle = isLit ? litColors[(idx + windowIdx) % litColors.length] : windowColors[(idx + windowIdx) % windowColors.length];
+                    // Vidro no diffuse
+                    ctx.fillStyle = isLit ? '#2a3b4c' : windowDayColors[idx % windowDayColors.length];
                     ctx.fillRect(wx, wy, ww, wh);
 
-                    // Divisor de vidro
-                    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                    // Divisórias da janela
+                    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
                     ctx.lineWidth = 1.5;
                     ctx.beginPath();
                     ctx.moveTo(wx + ww / 2, wy);
@@ -332,75 +385,126 @@ function initSharedFacadeMaterials() {
                     ctx.moveTo(wx, wy + wh / 2);
                     ctx.lineTo(wx + ww, wy + wh / 2);
                     ctx.stroke();
+
+                    // Luz aconchegante residencial à noite
+                    if (isLit) {
+                        ctxEm.fillStyle = glowColor;
+                        ctxEm.fillRect(wx, wy, ww, wh);
+                        // Cortina / detalhe interno
+                        ctxEm.fillStyle = 'rgba(0,0,0,0.15)';
+                        ctxEm.fillRect(wx + ww / 2 - 1, wy, 2, wh);
+                        ctxEm.fillRect(wx, wy + wh / 2 - 1, ww, 2);
+                    }
                 };
 
-                // Alterna estilos com 1 ou 2 janelas no total dependendo do índice da paleta (idx)
+                // Estilos com poucas janelas por casa (1 ou 2), dando aspecto residencial autêntico
                 if (idx % 4 === 0) {
-                    // Estilo 1: 1 Janela (andar superior) e 1 Porta (térreo esquerda)
                     drawDoor(40, 160, 44, 78);
-                    drawWin(140, 50, 54, 64, 1);
+                    drawResidentialWin(140, 50, 54, 64, true, '#ffd67a');
                 } else if (idx % 4 === 1) {
-                    // Estilo 2: 2 Janelas (1 térreo direita, 1 andar superior centro) e 1 Porta (térreo esquerda)
                     drawDoor(36, 160, 44, 78);
-                    drawWin(148, 168, 54, 58, 1);
-                    drawWin(96, 50, 54, 64, 2);
+                    drawResidentialWin(148, 168, 54, 58, false);
+                    drawResidentialWin(96, 50, 54, 64, true, '#ffa834');
                 } else if (idx % 4 === 2) {
-                    // Estilo 3: 1 Janela (andar superior centro) e 1 Porta (térreo centro)
                     drawDoor(106, 160, 44, 78);
-                    drawWin(101, 50, 54, 64, 1);
+                    drawResidentialWin(101, 50, 54, 64, true, '#ffe18f');
                 } else {
-                    // Estilo 4: 2 Janelas (andar superior esquerda e direita) e 1 Porta (térreo centro)
                     drawDoor(106, 160, 44, 78);
-                    drawWin(42, 50, 50, 62, 1);
-                    drawWin(164, 50, 50, 62, 2);
+                    drawResidentialWin(42, 50, 50, 62, true, '#ffd269');
+                    drawResidentialWin(164, 50, 50, 62, false);
                 }
             } else {
-                // Outros edifícios (escritórios, lojas, vidros, indústrias)
+                // Prédios, Escritórios, Lojas, Torres de Vidro, Indústrias
                 const isGlass = type === 'glass';
                 const isShop = type === 'shop';
                 const isIndustrial = type === 'industrial';
 
                 const cols = isGlass ? 6 : (isShop ? 3 : (isIndustrial ? 3 : 5));
                 const rows = isGlass ? 8 : (isShop ? 4 : (isIndustrial ? 3 : 6));
-                const ww = Math.round(cw / cols * 0.6);
-                const wh = Math.round(ch / rows * 0.55);
+                const ww = Math.round(cw / cols * 0.62);
+                const wh = Math.round(ch / rows * 0.58);
                 const spX = Math.round(cw / cols);
                 const spY = Math.round(ch / rows);
+
+                // Frisos entre andares
+                for (let r = 0; r <= rows; r++) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                    ctx.fillRect(0, Math.round(r * spY), cw, 3);
+                }
 
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         const wx = Math.round(c * spX + (spX - ww) / 2);
                         const wy = Math.round(r * spY + (spY - wh) / 2);
-                        const isLit = (r + c + idx) % 5 === 0;
 
-                        ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
+                        // Padrão pseudo-aleatório de janelas acesas em prédios
+                        const hash = (r * 7 + c * 13 + idx * 19) % 100;
+                        let isLit = false;
+                        let glowColor = litWindowColors[(r + c + idx) % litWindowColors.length];
+
+                        if (isShop && r === rows - 1) {
+                            isLit = true; // Vitrine comercial iluminada
+                            glowColor = '#ffe394';
+                        } else if (isGlass) {
+                            isLit = hash < 45;
+                        } else if (isIndustrial) {
+                            isLit = hash < 22;
+                        } else {
+                            isLit = hash < 38;
+                        }
+
+                        // Diffuse
+                        ctx.fillStyle = isGlass ? '#213344' : windowDayColors[(r + c) % windowDayColors.length];
                         ctx.fillRect(wx, wy, ww, wh);
-                        ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+                        ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
                         ctx.lineWidth = 1;
                         ctx.strokeRect(wx, wy, ww, wh);
+
+                        // Emissive
+                        if (isLit) {
+                            ctxEm.fillStyle = glowColor;
+                            ctxEm.fillRect(wx, wy, ww, wh);
+
+                            // Persianas / detalhes sutis
+                            if (!isGlass && hash % 2 === 0) {
+                                ctxEm.fillStyle = 'rgba(0,0,0,0.2)';
+                                ctxEm.fillRect(wx, wy + 2, ww, Math.round(wh * 0.35));
+                            }
+                        }
                     }
                 }
             }
 
             const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
             texture.colorSpace = THREE.SRGBColorSpace;
             texture.generateMipmaps = true;
             texture.minFilter = THREE.LinearMipmapLinearFilter;
             texture.magFilter = THREE.LinearFilter;
             texture.anisotropy = maxAnisotropy;
 
+            const emissiveTexture = new THREE.CanvasTexture(canvasEmissive);
+            emissiveTexture.wrapS = emissiveTexture.wrapT = THREE.RepeatWrapping;
+            emissiveTexture.colorSpace = THREE.SRGBColorSpace;
+            emissiveTexture.generateMipmaps = true;
+            emissiveTexture.minFilter = THREE.LinearMipmapLinearFilter;
+            emissiveTexture.magFilter = THREE.LinearFilter;
+            emissiveTexture.anisotropy = maxAnisotropy;
+
             const isGlass = type === 'glass';
             const mat = new THREE.MeshStandardMaterial({
                 map: texture,
-                roughness: isGlass ? 0.26 : 0.8,
-                metalness: isGlass ? 0.12 : 0,
+                emissiveMap: emissiveTexture,
+                emissive: new THREE.Color(0xffffff),
+                emissiveIntensity: 0.0,
+                roughness: isGlass ? 0.22 : 0.76,
+                metalness: isGlass ? 0.15 : 0.02,
                 transparent: isGlass,
-                opacity: isGlass ? 0.9 : 1.0
+                opacity: isGlass ? 0.92 : 1.0
             });
 
             sharedFacadeMaterials[type].push(mat);
+            allFacadeMaterials.push(mat);
         });
     });
 }
@@ -415,6 +519,7 @@ function getBlockFacadeMaterial(type, seed, blockIndex = 0) {
         const list = sharedFacadeMaterials[type] || sharedFacadeMaterials.office;
         const mat = list[Math.abs(seed) % list.length].clone();
         blockFacadeMaterialsCache.set(key, mat);
+        allFacadeMaterials.push(mat);
     }
     return blockFacadeMaterialsCache.get(key);
 }
@@ -751,7 +856,7 @@ function createDistricts() {
                 const addedElement = cityGroup.children[cityGroup.children.length - 1];
                 if (addedElement.isGroup && backendId) {
                     addedElement.userData.backendId = backendId;
-                    backendNodePositions[backendId] = new THREE.Vector3(block.x, 8.0, block.z);
+                    backendNodePositions[backendId] = new THREE.Vector3(block.x, 16.0, block.z);
                 }
             }
         }
@@ -1242,6 +1347,17 @@ function buildInstancedBases() {
     cityGroup.add(baseMesh);
 }
 
+const carLightMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfffae0,
+    transparent: true,
+    opacity: 0.95
+});
+const carTailMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff2222,
+    transparent: true,
+    opacity: 0.95
+});
+
 function createTrafficHints() {
     const carMaterials = [materials.carRed, materials.carWhite, materials.carBlue, materials.carGray];
     const carCount = 180;
@@ -1259,10 +1375,13 @@ function createTrafficHints() {
         carInstancesData.push({
             x, y: 0.42, z,
             width, height: 0.45, depth,
-            matIndex: i % carMaterials.length
+            matIndex: i % carMaterials.length,
+            horizontal
         });
         cityStats.cars += 1;
     }
+
+    const dummy = new THREE.Object3D();
 
     carMaterials.forEach((mat, matIdx) => {
         const matchingCars = carInstancesData.filter(c => c.matIndex === matIdx);
@@ -1273,7 +1392,6 @@ function createTrafficHints() {
         carMesh.receiveShadow = false;
         carMesh.matrixAutoUpdate = false;
 
-        const dummy = new THREE.Object3D();
         matchingCars.forEach((c, idx) => {
             dummy.position.set(c.x, c.y, c.z);
             dummy.scale.set(c.width, c.height, c.depth);
@@ -1285,6 +1403,46 @@ function createTrafficHints() {
         carMesh.updateMatrix();
         cityGroup.add(carMesh);
     });
+
+    // Faróis dianteiros e lanternas traseiras dos carros
+    const headLightsData = [];
+    const tailLightsData = [];
+
+    carInstancesData.forEach(c => {
+        if (c.horizontal) {
+            headLightsData.push({ x: c.x + c.width * 0.48, y: c.y, z: c.z - 0.35, w: 0.12, h: 0.14, d: 0.18 });
+            headLightsData.push({ x: c.x + c.width * 0.48, y: c.y, z: c.z + 0.35, w: 0.12, h: 0.14, d: 0.18 });
+            tailLightsData.push({ x: c.x - c.width * 0.48, y: c.y, z: c.z - 0.35, w: 0.12, h: 0.14, d: 0.18 });
+            tailLightsData.push({ x: c.x - c.width * 0.48, y: c.y, z: c.z + 0.35, w: 0.12, h: 0.14, d: 0.18 });
+        } else {
+            headLightsData.push({ x: c.x - 0.35, y: c.y, z: c.z + c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
+            headLightsData.push({ x: c.x + 0.35, y: c.y, z: c.z + c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
+            tailLightsData.push({ x: c.x - 0.35, y: c.y, z: c.z - c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
+            tailLightsData.push({ x: c.x + 0.35, y: c.y, z: c.z - c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
+        }
+    });
+
+    if (headLightsData.length > 0) {
+        const headMesh = new THREE.InstancedMesh(unitBoxGeometry, carLightMaterial, headLightsData.length);
+        headLightsData.forEach((h, idx) => {
+            dummy.position.set(h.x, h.y, h.z);
+            dummy.scale.set(h.w, h.h, h.d);
+            dummy.updateMatrix();
+            headMesh.setMatrixAt(idx, dummy.matrix);
+        });
+        headMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(headMesh);
+
+        const tailMesh = new THREE.InstancedMesh(unitBoxGeometry, carTailMaterial, tailLightsData.length);
+        tailLightsData.forEach((t, idx) => {
+            dummy.position.set(t.x, t.y, t.z);
+            dummy.scale.set(t.w, t.h, t.d);
+            dummy.updateMatrix();
+            tailMesh.setMatrixAt(idx, dummy.matrix);
+        });
+        tailMesh.instanceMatrix.needsUpdate = true;
+        cityGroup.add(tailMesh);
+    }
 }
 
 // ── Smart Grid Infrastructure ───────────────────────────────
@@ -1292,36 +1450,28 @@ function createTrafficHints() {
 const powerGridObjects = [];
 let powerState = 'normal';
 
-const poleShaftGeo = new THREE.CylinderGeometry(0.12, 0.18, 5.0, 8);
-const poleCrossArmGeo = new THREE.BoxGeometry(1.6, 0.12, 0.12);
-const transformerGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.7, 8);
-const lampHeadGeo = new THREE.BoxGeometry(0.2, 0.08, 0.4);
-const bulbGeo = new THREE.SphereGeometry(0.07, 8, 8);
+// Geometrias precisas e realistas para postes da rede elétrica & iluminação pública
+const poleShaftGeo = new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8);
+const poleCrossArmGeo = new THREE.BoxGeometry(1.8, 0.12, 0.12);
+const transformerGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.75, 8);
+// Braço tubular metálico de fixação da luminária (conecta o poste à luminária sobre a rua)
+const streetArmGeo = new THREE.CylinderGeometry(0.045, 0.045, 1.45, 6);
+// Cúpula moderna da luminária pública
+const lampHeadGeo = new THREE.BoxGeometry(0.26, 0.1, 0.52);
+// Lâmpada emissiva
+const bulbGeo = new THREE.SphereGeometry(0.12, 8, 8);
 
 function collectPoleInstance(group, x, z, angleRad = 0, opts = {}) {
-    const { hasTransformer = false, hasStreetlight = true } = opts;
+    const { hasTransformer = false, hasStreetlight = true, lampAngleRad = 0 } = opts;
 
     poleShaftData.push({ x, z, angleRad });
     if (hasTransformer) poleTransData.push({ x, z, angleRad });
-    if (hasStreetlight) poleLampData.push({ x, z, angleRad });
+    if (hasStreetlight) poleLampData.push({ x, z, angleRad, lampAngleRad });
 
-    if (hasStreetlight) {
-        const bulbMat = new THREE.MeshStandardMaterial({ color: 0xffeaad, roughness: 0.3, emissive: 0x000000 });
-        const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-        const bulbPos = new THREE.Vector3(0, 4.58, 1.2);
-        bulbPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
-        bulbPos.add(new THREE.Vector3(x, 0, z));
-        bulb.position.copy(bulbPos);
-        bulb.name = "streetLampBulb";
-        bulb.matrixAutoUpdate = false;
-        bulb.updateMatrix();
-        group.add(bulb);
-    }
-
-    const insulatorOffsets = [-0.65, 0, 0.65];
+    const insulatorOffsets = [-0.75, 0, 0.75];
     const insulatorWorldPositions = [];
     insulatorOffsets.forEach(offX => {
-        const pt = new THREE.Vector3(offX, 5.02, 0);
+        const pt = new THREE.Vector3(offX, 7.02, 0);
         pt.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
         pt.add(new THREE.Vector3(x, 0, z));
         insulatorWorldPositions.push(pt);
@@ -1332,6 +1482,7 @@ function collectPoleInstance(group, x, z, angleRad = 0, opts = {}) {
 
 function buildInstancedPoles() {
     const dummy = new THREE.Object3D();
+    const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
     if (poleShaftData.length > 0) {
         const shaftMesh = new THREE.InstancedMesh(poleShaftGeo, powerMats.woodPole, poleShaftData.length);
@@ -1342,13 +1493,13 @@ function buildInstancedPoles() {
         crossArmMesh.matrixAutoUpdate = false;
 
         poleShaftData.forEach((p, i) => {
-            dummy.position.set(p.x, 2.6, p.z);
+            dummy.position.set(p.x, 3.6, p.z);
             dummy.rotation.set(0, p.angleRad, 0);
             dummy.scale.set(1, 1, 1);
             dummy.updateMatrix();
             shaftMesh.setMatrixAt(i, dummy.matrix);
 
-            dummy.position.set(p.x, 4.75, p.z);
+            dummy.position.set(p.x, 6.85, p.z);
             dummy.updateMatrix();
             crossArmMesh.setMatrixAt(i, dummy.matrix);
         });
@@ -1367,7 +1518,7 @@ function buildInstancedPoles() {
         transMesh.matrixAutoUpdate = false;
 
         poleTransData.forEach((p, i) => {
-            dummy.position.set(p.x + 0.3, 3.6, p.z);
+            dummy.position.set(p.x + 0.35, 5.4, p.z);
             dummy.rotation.set(0, p.angleRad, 0);
             dummy.scale.set(1, 1, 1);
             dummy.updateMatrix();
@@ -1380,25 +1531,79 @@ function buildInstancedPoles() {
     }
 
     if (poleLampData.length > 0) {
+        const streetArmMesh = new THREE.InstancedMesh(streetArmGeo, powerMats.metalArm, poleLampData.length);
         const lampHeadMesh = new THREE.InstancedMesh(lampHeadGeo, powerMats.streetLamp, poleLampData.length);
+        const lampBulbMesh = new THREE.InstancedMesh(bulbGeo, powerMats.streetLampBulb, poleLampData.length);
+        const groundPoolGeo = new THREE.PlaneGeometry(9.0, 9.0);
+        const groundPoolMesh = new THREE.InstancedMesh(groundPoolGeo, groundLightPoolMaterial, poleLampData.length);
+
+        streetArmMesh.castShadow = false;
         lampHeadMesh.castShadow = false;
+        lampBulbMesh.castShadow = false;
+        groundPoolMesh.castShadow = false;
+
+        streetArmMesh.matrixAutoUpdate = false;
         lampHeadMesh.matrixAutoUpdate = false;
+        lampBulbMesh.matrixAutoUpdate = false;
+        groundPoolMesh.matrixAutoUpdate = false;
+
+        const armPitch = 0.38; // Inclinação do braço tubular
 
         poleLampData.forEach((p, i) => {
-            const headPos = new THREE.Vector3(0, 4.65, 1.15);
-            headPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), p.angleRad);
-            headPos.add(new THREE.Vector3(p.x, 0, p.z));
+            const angle = p.lampAngleRad !== undefined ? p.lampAngleRad : p.angleRad;
+            const poleBase = new THREE.Vector3(p.x, 0, p.z);
 
-            dummy.position.copy(headPos);
-            dummy.rotation.set(0, p.angleRad, 0);
+            // 1. Braço tubular metálico (sai do poste em direção à rua)
+            const armOffset = new THREE.Vector3(0, 5.48, 0.68);
+            armOffset.applyAxisAngle(Y_AXIS, angle);
+            dummy.position.copy(poleBase).add(armOffset);
+            dummy.rotation.set(-armPitch, angle, 0, 'YXZ');
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            streetArmMesh.setMatrixAt(i, dummy.matrix);
+
+            // 2. Cúpula da luminária pública
+            const headOffset = new THREE.Vector3(0, 5.82, 1.45);
+            headOffset.applyAxisAngle(Y_AXIS, angle);
+            dummy.position.copy(poleBase).add(headOffset);
+            dummy.rotation.set(0, angle, 0);
             dummy.scale.set(1, 1, 1);
             dummy.updateMatrix();
             lampHeadMesh.setMatrixAt(i, dummy.matrix);
+
+            // 3. Lâmpada brilhante (na parte inferior da luminária)
+            const bulbOffset = new THREE.Vector3(0, 5.74, 1.45);
+            bulbOffset.applyAxisAngle(Y_AXIS, angle);
+            dummy.position.copy(poleBase).add(bulbOffset);
+            dummy.rotation.set(0, 0, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            lampBulbMesh.setMatrixAt(i, dummy.matrix);
+
+            // 4. Piscina circular suave de luz âmbar no asfalto da rua
+            const groundOffset = new THREE.Vector3(0, 0.04, 1.45);
+            groundOffset.applyAxisAngle(Y_AXIS, angle);
+            dummy.position.copy(poleBase).add(groundOffset);
+            dummy.rotation.set(-Math.PI / 2, 0, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            groundPoolMesh.setMatrixAt(i, dummy.matrix);
         });
 
+        streetArmMesh.instanceMatrix.needsUpdate = true;
         lampHeadMesh.instanceMatrix.needsUpdate = true;
+        lampBulbMesh.instanceMatrix.needsUpdate = true;
+        groundPoolMesh.instanceMatrix.needsUpdate = true;
+
+        streetArmMesh.updateMatrix();
         lampHeadMesh.updateMatrix();
+        lampBulbMesh.updateMatrix();
+        groundPoolMesh.updateMatrix();
+
+        cityGroup.add(streetArmMesh);
         cityGroup.add(lampHeadMesh);
+        cityGroup.add(lampBulbMesh);
+        cityGroup.add(groundPoolMesh);
     }
 }
 
@@ -1440,7 +1645,7 @@ function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat
 }
 
 function createPowerGrid() {
-    const offset = ROAD_WIDTH / 2 + 0.5;
+    const offset = ROAD_WIDTH / 2 + 0.6;
 
     for (let r = 0; r < ROAD_COORDS.length; r++) {
         const z = ROAD_COORDS[r];
@@ -1453,14 +1658,16 @@ function createPowerGrid() {
             cityGroup.add(group);
             powerGridObjects.push(group);
 
+            const lampAngleRad = side === 1 ? Math.PI : 0;
+
             let prevPole = null;
             for (let c = 0; c < BLOCK_CENTERS.length; c++) {
                 const x = BLOCK_CENTERS[c];
                 const hasTrans = noise(r, c, 801) > 0.7;
                 
-                const pPos = collectPoleInstance(group, x, z + side * offset, 0, { hasTransformer: hasTrans, hasStreetlight: true });
+                const pPos = collectPoleInstance(group, x, z + side * offset, 0, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
                 if (prevPole) {
-                    addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.4);
+                    addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.35);
                 }
                 prevPole = pPos;
             }
@@ -1478,14 +1685,16 @@ function createPowerGrid() {
             cityGroup.add(group);
             powerGridObjects.push(group);
 
+            const lampAngleRad = side === 1 ? -Math.PI / 2 : Math.PI / 2;
+
             let prevPole = null;
             for (let r = 0; r < BLOCK_CENTERS.length; r++) {
                 const z = BLOCK_CENTERS[r];
                 const hasTrans = noise(r, c, 802) > 0.7;
                 
-                const pPos = collectPoleInstance(group, x + side * offset, z, Math.PI / 2, { hasTransformer: hasTrans, hasStreetlight: true });
+                const pPos = collectPoleInstance(group, x + side * offset, z, Math.PI / 2, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
                 if (prevPole) {
-                    addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.4);
+                    addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.35);
                 }
                 prevPole = pPos;
             }
@@ -1809,23 +2018,85 @@ function setupUI() {
     });
 }
 
-function createLighting() {
-    const hemi = new THREE.HemisphereLight(0xdcefff, 0x7c806d, 1.68);
-    scene.add(hemi);
+let hemiLight = null;
+let sunLight = null;
+let moonLight = null;
+let starMaterial = null;
 
-    const sun = new THREE.DirectionalLight(0xfff3d7, 3.1);
-    sun.position.set(-180, 250, 130);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.near = 40;
-    sun.shadow.camera.far = 650;
-    sun.shadow.camera.left = -260;
-    sun.shadow.camera.right = 260;
-    sun.shadow.camera.top = 260;
-    sun.shadow.camera.bottom = -260;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.02;
-    scene.add(sun);
+function createLighting() {
+    hemiLight = new THREE.HemisphereLight(0xdcefff, 0x6e7568, 1.45);
+    scene.add(hemiLight);
+
+    // Luz Solar (Dia)
+    sunLight = new THREE.DirectionalLight(0xfff3d7, 3.0);
+    sunLight.position.set(-180, 250, 130);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.near = 40;
+    sunLight.shadow.camera.far = 650;
+    sunLight.shadow.camera.left = -260;
+    sunLight.shadow.camera.right = 260;
+    sunLight.shadow.camera.top = 260;
+    sunLight.shadow.camera.bottom = -260;
+    sunLight.shadow.bias = -0.0004;
+    sunLight.shadow.normalBias = 0.02;
+    scene.add(sunLight);
+
+    // Luz Lunar (Noite - iluminação azulada elegante e sombras suaves à noite)
+    moonLight = new THREE.DirectionalLight(0x8eaed6, 0.0);
+    moonLight.position.set(180, 250, -130);
+    moonLight.castShadow = true;
+    moonLight.shadow.mapSize.set(1024, 1024);
+    moonLight.shadow.camera.near = 40;
+    moonLight.shadow.camera.far = 650;
+    moonLight.shadow.camera.left = -260;
+    moonLight.shadow.camera.right = 260;
+    moonLight.shadow.camera.top = 260;
+    moonLight.shadow.camera.bottom = -260;
+    moonLight.shadow.bias = -0.0004;
+    moonLight.shadow.normalBias = 0.02;
+    scene.add(moonLight);
+}
+
+function createStarfield() {
+    const starCount = 1600;
+    const positions = new Float32Array(starCount * 3);
+    const colors = new Float32Array(starCount * 3);
+
+    for (let i = 0; i < starCount; i++) {
+        const radius = 600 + Math.random() * 350;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(0.04 + Math.random() * 0.96);
+
+        positions[i * 3]     = radius * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = radius * Math.cos(phi);
+        positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+
+        const starType = Math.random();
+        if (starType > 0.75) {
+            colors[i * 3] = 0.85; colors[i * 3 + 1] = 0.93; colors[i * 3 + 2] = 1.0;
+        } else if (starType > 0.5) {
+            colors[i * 3] = 1.0; colors[i * 3 + 1] = 0.94; colors[i * 3 + 2] = 0.82;
+        } else {
+            colors[i * 3] = 0.98; colors[i * 3 + 1] = 0.98; colors[i * 3 + 2] = 0.98;
+        }
+    }
+
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    starMaterial = new THREE.PointsMaterial({
+        size: 2.2,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.0,
+        sizeAttenuation: false,
+        depthWrite: false
+    });
+
+    const starPoints = new THREE.Points(starGeo, starMaterial);
+    scene.add(starPoints);
 }
 
 function initializeScene() {
@@ -1834,6 +2105,7 @@ function initializeScene() {
     createDistricts();
     createTrafficHints();
     createLighting();
+    createStarfield();
     createPowerGrid();
     createTransmissionLines();
 
@@ -1959,6 +2231,7 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
 // ── Instanciação do Simulador ─────────────────────────────────
 const citySimulator = new CitySimulator({ onSync: syncSceneWithBackend });
+const grafo = citySimulator.grafo;
 
 initializeScene();
 
@@ -2063,45 +2336,42 @@ function animate() {
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
     updateSmoothDayNightCycle(delta);
 
-    if (scene.fog && sceneLightState === 'day') {
-        const altitude = camera.position.y;
-        const t = Math.max(0, Math.min(1, altitude / 250));
-        scene.fog.near = 70 + (t * 250);
-        scene.fog.far = 240 + (t * 620);
-
-        const r = 166 + t * (191 - 166);
-        const g = 194 + t * (211 - 194);
-        const b = 218 + t * (230 - 218);
-        scene.background.setRGB(r / 255, g / 255, b / 255);
-        scene.fog.color.setRGB(r / 255, g / 255, b / 255);
-    }
-
     renderer.render(scene, camera);
 }
 
-// ── Sistema de Transição Suave do Dia/Noite & Minutos ────────
-const colorNight = new THREE.Color(0x0a1020);
-const colorDawn  = new THREE.Color(0xdf8453);
-const colorDay   = new THREE.Color(0x8dbbe0);
-const colorDusk  = new THREE.Color(0x3e234e);
+// ── Sistema de Transição Suave do Dia/Noite, Minutos & Iluminação Urbana ────
 
-const hemiDayTop = new THREE.Color(0xdcefff);
-const hemiDayGround = new THREE.Color(0x7c806d);
-const hemiNightTop = new THREE.Color(0x1a2a40);
-const hemiNightGround = new THREE.Color(0x0a101a);
+const colorNight     = new THREE.Color(0x060c18); // Azul noite cinematográfico e profundo
+const colorDawn      = new THREE.Color(0xdf7c4e); // Amanhecer dourado/pêssego
+const colorDay       = new THREE.Color(0x82b2dd); // Céu limpo diurno
+const colorSunset    = new THREE.Color(0xdb5834); // Pôr do sol alaranjado
+const colorDusk      = new THREE.Color(0x401d4a); // Crepúsculo violeta
+
+const hemiDayTop     = new THREE.Color(0xdcefff);
+const hemiDayGround  = new THREE.Color(0x6e7568);
+const hemiDuskTop    = new THREE.Color(0x7c3aed);
+const hemiDuskGround = new THREE.Color(0x381907);
+const hemiNightTop   = new THREE.Color(0x0e182e);
+const hemiNightGround= new THREE.Color(0x050a12);
+
+let lastCheckedHour = 7;
 
 function updateSmoothDayNightCycle(delta) {
-    // Interpolação fluida do relógio (lerp para transição gradativa das horas e minutos)
-    const diff = targetDecimalTime - currentDecimalTime;
-    if (Math.abs(diff) > 0.001) {
-        currentDecimalTime += diff * Math.min(1.0, delta * 3.5);
-    } else {
+    if (isTimeRunning) {
+        targetDecimalTime = (targetDecimalTime + delta * timeSpeed) % 24;
         currentDecimalTime = targetDecimalTime;
+    } else {
+        const diff = targetDecimalTime - currentDecimalTime;
+        if (Math.abs(diff) > 0.001) {
+            currentDecimalTime += diff * Math.min(1.0, delta * 3.5);
+        } else {
+            currentDecimalTime = targetDecimalTime;
+        }
     }
 
     const h = (currentDecimalTime % 24 + 24) % 24;
 
-    // Atualiza HUD com minutos (formato HH:MM)
+    // Atualiza HUD com minutos contínuos (formato HH:MM)
     const hInt = Math.floor(h);
     const mInt = Math.floor((h - hInt) * 60);
     const hudHora = document.getElementById('hud-sim-hora');
@@ -2109,36 +2379,72 @@ function updateSmoothDayNightCycle(delta) {
         hudHora.textContent = `${String(hInt).padStart(2, '0')}:${String(mInt).padStart(2, '0')}`;
     }
 
-    const sun = scene.children.find(c => c.isDirectionalLight);
-    const hemi = scene.children.find(c => c.isHemisphereLight);
+    // Sincroniza estado dos agentes quando a hora inteira muda
+    if (hInt !== lastCheckedHour) {
+        lastCheckedHour = hInt;
+        if (citySimulator && citySimulator.estado) {
+            citySimulator.estado.hora = hInt;
+            peakHourAgent(grafo, hInt);
+            atualizarPainelHUD();
+        }
+    }
 
-    // Movimento orbital do Sol no Céu (Leste -> Oeste)
+    // Trajetória orbital do Sol (Leste -> Oeste durante o dia: 6h às 18h)
     const sunAngle = ((h - 6) / 12) * Math.PI;
-    if (sun) {
-        sun.position.x = -240 * Math.cos(sunAngle);
-        sun.position.y = Math.max(-40, 260 * Math.sin(sunAngle));
-        sun.position.z = 130;
+    if (sunLight) {
+        sunLight.position.x = -240 * Math.cos(sunAngle);
+        sunLight.position.y = Math.max(-40, 260 * Math.sin(sunAngle));
+        sunLight.position.z = 130;
+    }
+
+    // Trajetória orbital da Lua (Noite: 18h às 6h)
+    if (moonLight) {
+        const moonAngle = sunAngle + Math.PI;
+        moonLight.position.x = -240 * Math.cos(moonAngle);
+        moonLight.position.y = Math.max(-40, 260 * Math.sin(moonAngle));
+        moonLight.position.z = -130;
     }
 
     // Fator de Luz Solar (0 = Noite, 1 = Meio-Dia)
     let sunFactor = 0;
-    if (h >= 5 && h <= 19) {
-        sunFactor = Math.sin(((h - 5) / 14) * Math.PI);
+    if (h >= 5.5 && h <= 18.5) {
+        sunFactor = Math.sin(((h - 5.5) / 13) * Math.PI);
     }
     sunFactor = Math.max(0, Math.min(1, sunFactor));
 
-    // Interpolação contínua da cor do Céu e Névoa
+    // Fator Noturno (0 = Dia Pleno 07h-17h, 1 = Plena Noite 19h30-05h30)
+    let nightFactor = 0;
+    if (h >= 19.5 || h < 5.5) {
+        nightFactor = 1.0;
+    } else if (h >= 17.5 && h < 19.5) {
+        nightFactor = (h - 17.5) / 2.0; // Acende gradualmente ao entardecer
+    } else if (h >= 5.5 && h < 6.8) {
+        nightFactor = 1.0 - (h - 5.5) / 1.3; // Apaga ao amanhecer
+    } else {
+        nightFactor = 0.0; // Totalmente desligado durante o dia
+    }
+
+    // Interpolação suave de 24h para Cor do Céu e Névoa
     const currentSkyColor = new THREE.Color();
-    if (h >= 0 && h < 5) {
+    if (h >= 0 && h < 5.2) {
         currentSkyColor.copy(colorNight);
-    } else if (h >= 5 && h < 7.5) {
-        const t = (h - 5) / 2.5;
-        currentSkyColor.copy(colorNight).lerp(colorDawn, t * 0.7).lerp(colorDay, Math.max(0, t - 0.4));
-    } else if (h >= 7.5 && h < 16.5) {
+    } else if (h >= 5.2 && h < 6.3) {
+        const t = (h - 5.2) / 1.1;
+        currentSkyColor.copy(colorNight).lerp(colorDawn, t);
+    } else if (h >= 6.3 && h < 7.0) {
+        const t = (h - 6.3) / 0.7;
+        currentSkyColor.copy(colorDawn).lerp(colorDay, t);
+    } else if (h >= 7.0 && h < 16.8) {
         currentSkyColor.copy(colorDay);
-    } else if (h >= 16.5 && h < 19.5) {
-        const t = (h - 16.5) / 3.0;
-        currentSkyColor.copy(colorDay).lerp(colorDusk, t * 0.7).lerp(colorNight, Math.max(0, (t - 0.4) * 2));
+    } else if (h >= 16.8 && h < 18.2) {
+        const t = (h - 16.8) / 1.4;
+        currentSkyColor.copy(colorDay).lerp(colorSunset, t);
+    } else if (h >= 18.2 && h < 19.6) {
+        const t = (h - 18.2) / 1.4;
+        currentSkyColor.copy(colorSunset).lerp(colorDusk, t);
+    } else if (h >= 19.6 && h < 20.8) {
+        const t = (h - 19.6) / 1.2;
+        currentSkyColor.copy(colorDusk).lerp(colorNight, t);
     } else {
         currentSkyColor.copy(colorNight);
     }
@@ -2149,58 +2455,56 @@ function updateSmoothDayNightCycle(delta) {
         if (cameraMode === 'fly') {
             const altitude = camera.position.y;
             const tAlt = Math.max(0, Math.min(1, altitude / 250));
-            scene.fog.near = 70 + (tAlt * 250);
-            scene.fog.far = 240 + (tAlt * 620);
+            scene.fog.near = 100 + (tAlt * 250);
+            scene.fog.far = 380 + (tAlt * 650);
         }
     }
 
-    // Intensidade e Tonalidade das Luzes
-    if (sun) {
-        sun.intensity = THREE.MathUtils.lerp(0.04, 3.1, sunFactor);
-        const sunColor = new THREE.Color().lerpColors(new THREE.Color(0x6b80a6), new THREE.Color(0xfff3d7), sunFactor);
-        sun.color.copy(sunColor);
+    // Intensidades e Tonalidades das Luzes
+    if (sunLight) {
+        sunLight.intensity = THREE.MathUtils.lerp(0.0, 3.0, sunFactor);
+        const sunColor = new THREE.Color().lerpColors(new THREE.Color(0xf59e0b), new THREE.Color(0xfff3d7), sunFactor);
+        sunLight.color.copy(sunColor);
     }
 
-    if (hemi) {
-        hemi.intensity = THREE.MathUtils.lerp(0.4, 1.68, sunFactor);
-        hemi.color.lerpColors(hemiNightTop, hemiDayTop, sunFactor);
-        hemi.groundColor.lerpColors(hemiNightGround, hemiDayGround, sunFactor);
+    if (moonLight) {
+        moonLight.intensity = THREE.MathUtils.lerp(0.0, 0.6, nightFactor);
     }
 
-    // Fator Noturno (Graduação suave para acender postes e janelas)
-    const nightFactor = Math.max(0, Math.min(1, 1 - sunFactor * 1.6));
-
-    powerGridObjects.forEach(group => {
-        if (group.userData.active) {
-            group.traverse(child => {
-                if (child.name === "streetLampBulb" && child.material) {
-                    if (nightFactor > 0.05) {
-                        const bulbColor = new THREE.Color(0xffaa22).multiplyScalar(nightFactor);
-                        child.material.emissive.copy(bulbColor);
-                    } else {
-                        child.material.emissive.setHex(0x000000);
-                    }
-                }
-            });
+    if (hemiLight) {
+        hemiLight.intensity = THREE.MathUtils.lerp(0.45, 1.45, sunFactor);
+        if (h >= 16.5 && h < 20.0) {
+            const t = (h - 16.5) / 3.5;
+            hemiLight.color.copy(hemiDayTop).lerp(hemiDuskTop, t);
+            hemiLight.groundColor.copy(hemiDayGround).lerp(hemiDuskGround, t);
+        } else {
+            hemiLight.color.lerpColors(hemiNightTop, hemiDayTop, sunFactor);
+            hemiLight.groundColor.lerpColors(hemiNightGround, hemiDayGround, sunFactor);
         }
+    }
+
+    // Estrelas cintilantes no céu noturno
+    if (starMaterial) {
+        starMaterial.opacity = Math.max(0, Math.min(1, (nightFactor - 0.25) / 0.75));
+    }
+
+    // Postes de Iluminação Pública & Manchas de Luz Âmbar no Asfalto/Calçadas
+    if (powerMats.streetLampBulb) {
+        powerMats.streetLampBulb.emissiveIntensity = nightFactor * 4.2;
+    }
+    if (groundLightPoolMaterial) {
+        groundLightPoolMaterial.opacity = nightFactor * 0.78;
+    }
+
+    // Janelas dos Edifícios e Casas (Apenas as janelas acendem à noite!)
+    const windowGlow = nightFactor * 1.8;
+    allFacadeMaterials.forEach(mat => {
+        mat.emissiveIntensity = windowGlow;
     });
 
-    cityGroup.traverse(child => {
-        if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => {
-                if (mat.map && mat.emissive) {
-                    if (nightFactor > 0.05) {
-                        mat.emissive.setHex(0x555544);
-                        mat.emissiveIntensity = nightFactor;
-                    } else {
-                        mat.emissive.setHex(0x000000);
-                        mat.emissiveIntensity = 0;
-                    }
-                }
-            });
-        }
-    });
+    // Luzes dos Carros (Faróis e Lanternas)
+    if (carLightMaterial) carLightMaterial.opacity = Math.min(1.0, 0.4 + nightFactor * 0.6);
+    if (carTailMaterial)  carTailMaterial.opacity  = Math.min(1.0, 0.4 + nightFactor * 0.6);
 }
 
 function handleResize() {
@@ -2216,8 +2520,6 @@ animate();
 // CONEXÃO DOS BOTÕES DO PAINEL AO MOTOR LÓGICO (smartAgents.js)
 // ═══════════════════════════════════════════════════════════════
 
-const grafo = citySimulator.grafo;
-
 /**
  * Função genérica para engatilhar a atualização visual e sincronizar o HUD
  */
@@ -2228,26 +2530,53 @@ function atualizarPainelHUD() {
     console.log('[HUD] Painel HUD atualizado.');
 }
 
-// 1. Botão: Forçar Pico Noturno (19h)
+// 0. Botão: Travar / Destravar Tempo (Play/Pause)
+const btnToggleTime = document.getElementById('btn-toggle-time');
+const iconPause = document.getElementById('icon-time-pause');
+const iconPlay = document.getElementById('icon-time-play');
+const textTimeToggle = document.getElementById('time-toggle-text');
+
+if (btnToggleTime) {
+    btnToggleTime.addEventListener('click', () => {
+        isTimeRunning = !isTimeRunning;
+        if (isTimeRunning) {
+            btnToggleTime.className = 'control-btn success';
+            if (iconPause) iconPause.style.display = 'block';
+            if (iconPlay) iconPlay.style.display = 'none';
+            if (textTimeToggle) textTimeToggle.textContent = 'Pausar Tempo (Travar)';
+            console.log('[Simulador] Tempo destravado (avanço contínuo em minutos ativo).');
+        } else {
+            btnToggleTime.className = 'control-btn warning';
+            if (iconPause) iconPause.style.display = 'none';
+            if (iconPlay) iconPlay.style.display = 'block';
+            if (textTimeToggle) textTimeToggle.textContent = 'Destravar Tempo (Rodar)';
+            console.log('[Simulador] Tempo travado / pausado.');
+        }
+    });
+}
+
+// 1. Botão: Forçar Pico Noturno (20h)
 const btnForcarNoite = document.getElementById('btn-forcar-noite');
 if (btnForcarNoite) {
     btnForcarNoite.addEventListener('click', () => {
-        targetDecimalTime = 19.0;
-        if (citySimulator.estado) citySimulator.estado.hora = 19;
-        console.log('[Painel] Botão Forçar Pico Noturno clicado (transição gradual para 19:00).');
-        peakHourAgent(grafo, 19);
+        targetDecimalTime = 20.0;
+        currentDecimalTime = 20.0;
+        if (citySimulator.estado) citySimulator.estado.hora = 20;
+        console.log('[Painel] Botão Forçar Pico Noturno clicado (20:00).');
+        peakHourAgent(grafo, 20);
         atualizarPainelHUD();
     });
 }
 
-// 2. Botão: Avançar Hora (0 a 23 com minutos)
+// 2. Botão: Avançar Hora (+1h)
 const btnAvancarHora = document.getElementById('btn-avancar-hora');
 if (btnAvancarHora) {
     btnAvancarHora.addEventListener('click', () => {
         const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
         targetDecimalTime = proximaHora;
+        currentDecimalTime = proximaHora;
         if (citySimulator.estado) citySimulator.estado.hora = proximaHora;
-        console.log(`[Painel] Botão Avançar Hora clicado. Transição gradual para ${proximaHora}:00.`);
+        console.log(`[Painel] Botão Avançar Hora clicado. Hora ajustada para ${proximaHora}:00.`);
         peakHourAgent(grafo, proximaHora);
         atualizarPainelHUD();
     });
@@ -2277,4 +2606,6 @@ if (btnFalhaUsina) {
         atualizarPainelHUD();
     });
 }
+
+window.camera = camera;
 
