@@ -7,6 +7,9 @@ const container = document.getElementById('canvas-container');
 
 // ── Cena, Câmera e Renderizador Ultraleve ─────────────────────
 
+let currentDecimalTime = 7.0; // Hora inicial (07:00)
+let targetDecimalTime = 7.0;
+
 const scene = new THREE.Scene();
 const skyColorDay = new THREE.Color(0xbfd3e6);
 scene.background = skyColorDay.clone();
@@ -2077,10 +2080,6 @@ function animate() {
 }
 
 // ── Sistema de Transição Suave do Dia/Noite & Minutos ────────
-
-let currentDecimalTime = 7.0; // Hora inicial (07:00)
-let targetDecimalTime = 7.0;
-
 const colorNight = new THREE.Color(0x0a1020);
 const colorDawn  = new THREE.Color(0xdf8453);
 const colorDay   = new THREE.Color(0x8dbbe0);
