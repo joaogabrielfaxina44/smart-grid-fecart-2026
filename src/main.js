@@ -22,9 +22,9 @@ const renderer = new THREE.WebGLRenderer({
     stencil: false
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Máxima fluidez sem sobrecarregar GPU
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap; // PCFShadowMap: muito mais leve e fluido que PCFSoft
+renderer.shadowMap.type = THREE.PCFShadowMap; // PCFShadowMap: leve, nitido e ultrarrápido
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -201,11 +201,13 @@ renderer.domElement.addEventListener('wheel', (e) => {
 
 const cityGroup = new THREE.Group();
 cityGroup.name = 'Large Mixed Smart City';
+cityGroup.matrixAutoUpdate = false;
 scene.add(cityGroup);
 
 const unitBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const trunkGeometry = new THREE.CylinderGeometry(0.22, 0.28, 1.8, 7);
 const canopyGeometry = new THREE.SphereGeometry(1.1, 8, 6);
+const waterTankGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.9, 8);
 
 const materials = {
     terrain: new THREE.MeshStandardMaterial({ color: 0x708d63, roughness: 0.96 }),
@@ -329,42 +331,77 @@ function initSharedFacadeMaterials() {
 
 initSharedFacadeMaterials();
 
-function getSharedFacadeMaterial(type, seed) {
-    const list = sharedFacadeMaterials[type] || sharedFacadeMaterials.office;
-    return list[Math.abs(seed) % list.length];
+// Cache de materiais por bloco para isolamento de apagões com zero clonagem individual por edifício
+const blockFacadeMaterialsCache = new Map();
+
+function getBlockFacadeMaterial(type, seed, blockIndex = 0) {
+    const key = `${blockIndex}_${type}_${seed % 4}`;
+    if (!blockFacadeMaterialsCache.has(key)) {
+        const list = sharedFacadeMaterials[type] || sharedFacadeMaterials.office;
+        const mat = list[Math.abs(seed) % list.length].clone();
+        blockFacadeMaterialsCache.set(key, mat);
+    }
+    return blockFacadeMaterialsCache.get(key);
 }
 
-function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent = cityGroup, roofMaterial = null }) {
-    const baseWallMat = getSharedFacadeMaterial(type, seed);
-    const wallMat = baseWallMat.clone();
+function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent = cityGroup, roofMaterial = null, blockIndex = 0 }) {
+    const wallMat = getBlockFacadeMaterial(type, seed, blockIndex);
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
-    // [+X, -X, +Y, -Y, +Z, -Z] -> paredes compartilham a mesma referência de material clonado
+
     const mesh = new THREE.Mesh(unitBoxGeometry, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
     mesh.position.set(x, height / 2, z);
     mesh.scale.set(width, height, depth);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
     parent.add(mesh);
     return mesh;
 }
+
+// ── Coletores para InstancedMesh Massivos de Detalhes ─────────
+
+const waterTankInstancesData = [];
+const acUnitInstancesData = [];
+const antennaInstancesData = [];
+const balconyInstancesData = [];
+const railingInstancesData = [];
+const canopyLedgeInstancesData = [];
+const canopyFrameInstancesData = [];
+const fenceInstancesData = [];
 
 function addRooftopDetails(parent, x, z, w, d, h, seed) {
     const n1 = noise(seed, 0, 560);
     const n2 = noise(seed, 1, 561);
     if (n1 > 0.4) {
-        const tank = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.35 + n1 * 0.25, 0.35 + n1 * 0.25, 0.9, 8),
-            detailMats.waterTank
-        );
-        tank.position.set(x + w * 0.2, h + 0.45, z - d * 0.15);
-        parent.add(tank);
+        waterTankInstancesData.push({
+            x: x + w * 0.2,
+            y: h + 0.45,
+            z: z - d * 0.15,
+            scaleRadius: 0.35 + n1 * 0.25,
+            scaleY: 0.9
+        });
     }
     if (n2 > 0.35) {
-        addBox({ width: 0.9 + n2 * 0.5, height: 0.45, depth: 0.6 + n2 * 0.35, x: x - w * 0.15, y: h + 0.22, z: z + d * 0.1, material: detailMats.acUnit, parent, cast: false, receive: false });
+        acUnitInstancesData.push({
+            x: x - w * 0.15,
+            y: h + 0.22,
+            z: z + d * 0.1,
+            w: 0.9 + n2 * 0.5,
+            h: 0.45,
+            d: 0.6 + n2 * 0.35
+        });
     }
     if (noise(seed, 2, 562) > 0.6) {
-        addBox({ width: 0.06, height: 1.4, depth: 0.06, x: x + w * 0.25, y: h + 0.7, z: z + d * 0.22, material: detailMats.antenna, parent, cast: false, receive: false });
+        antennaInstancesData.push({
+            x: x + w * 0.25,
+            y: h + 0.7,
+            z: z + d * 0.22,
+            w: 0.06,
+            h: 1.4,
+            d: 0.06
+        });
     }
 }
 
@@ -375,16 +412,85 @@ function addBalconies(parent, x, z, w, d, h, seed, count) {
     for (let i = 1; i <= count; i++) {
         const by = flH * i;
         if (noise(seed + i, 0, 572) > 0.35) {
-            addBox({ width: bw, height: 0.07, depth: bd, x, y: by, z: z + d / 2 + bd / 2, material: detailMats.balcony, parent, cast: false, receive: false });
-            addBox({ width: bw, height: 0.3, depth: 0.04, x, y: by + 0.15, z: z + d / 2 + bd, material: detailMats.railing, parent, cast: false, receive: false });
+            balconyInstancesData.push({ x, y: by, z: z + d / 2 + bd / 2, w: bw, h: 0.07, d: bd });
+            railingInstancesData.push({ x, y: by + 0.15, z: z + d / 2 + bd, w: bw, h: 0.3, d: 0.04 });
         }
     }
 }
 
 function addEntranceCanopy(parent, x, z, canopyW, bDepth) {
-    addBox({ width: canopyW, height: 0.08, depth: 0.9, x, y: 2.2, z: z - bDepth / 2 - 0.45, material: detailMats.ledge, parent, cast: false, receive: false });
-    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x - canopyW / 2 + 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent, cast: false, receive: false });
-    addBox({ width: 0.08, height: 2.1, depth: 0.08, x: x + canopyW / 2 - 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, material: detailMats.entranceFrame, parent, cast: false, receive: false });
+    canopyLedgeInstancesData.push({ x, y: 2.2, z: z - bDepth / 2 - 0.45, w: canopyW, h: 0.08, d: 0.9 });
+    canopyFrameInstancesData.push({ x: x - canopyW / 2 + 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, w: 0.08, h: 2.1, d: 0.08 });
+    canopyFrameInstancesData.push({ x: x + canopyW / 2 - 0.08, y: 1.05, z: z - bDepth / 2 - 0.8, w: 0.08, h: 2.1, d: 0.08 });
+}
+
+function addPerimeterFence(group, bx, bz) {
+    fenceInstancesData.push({ x: bx, y: 0.6, z: bz + BLOCK_SIZE / 2, w: BLOCK_SIZE, h: 1.2, d: 0.1 });
+    fenceInstancesData.push({ x: bx, y: 0.6, z: bz - BLOCK_SIZE / 2, w: BLOCK_SIZE, h: 1.2, d: 0.1 });
+    fenceInstancesData.push({ x: bx + BLOCK_SIZE / 2, y: 0.6, z: bz, w: 0.1, h: 1.2, d: BLOCK_SIZE });
+    fenceInstancesData.push({ x: bx - BLOCK_SIZE / 2, y: 0.6, z: bz, w: 0.1, h: 1.2, d: BLOCK_SIZE });
+}
+
+function buildInstancedRooftopsAndDetails() {
+    const dummy = new THREE.Object3D();
+
+    const createBatch = (geo, mat, dataList, scaleFn, cast = false, receive = false) => {
+        if (dataList.length === 0) return;
+        const imesh = new THREE.InstancedMesh(geo, mat, dataList.length);
+        imesh.castShadow = cast;
+        imesh.receiveShadow = receive;
+        imesh.matrixAutoUpdate = false;
+
+        dataList.forEach((item, index) => {
+            dummy.position.set(item.x, item.y, item.z);
+            scaleFn(dummy, item);
+            dummy.rotation.set(0, 0, 0);
+            dummy.updateMatrix();
+            imesh.setMatrixAt(index, dummy.matrix);
+        });
+
+        imesh.instanceMatrix.needsUpdate = true;
+        imesh.updateMatrix();
+        cityGroup.add(imesh);
+    };
+
+    // Caixas d'água
+    createBatch(waterTankGeo, detailMats.waterTank, waterTankInstancesData, (d, item) => {
+        d.scale.set(item.scaleRadius, item.scaleY, item.scaleRadius);
+    }, false, true);
+
+    // Unidades de Ar-Condicionado
+    createBatch(unitBoxGeometry, detailMats.acUnit, acUnitInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, true);
+
+    // Antenas de Cobertura
+    createBatch(unitBoxGeometry, detailMats.antenna, antennaInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, false);
+
+    // Sacadas & Corrimãos
+    createBatch(unitBoxGeometry, detailMats.balcony, balconyInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, true);
+
+    createBatch(unitBoxGeometry, detailMats.railing, railingInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, false);
+
+    // Marqueses e Portais de Entrada
+    createBatch(unitBoxGeometry, detailMats.ledge, canopyLedgeInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, true);
+
+    createBatch(unitBoxGeometry, detailMats.entranceFrame, canopyFrameInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, false);
+
+    // Cercas Perimetrais
+    createBatch(unitBoxGeometry, detailMats.railing, fenceInstancesData, (d, item) => {
+        d.scale.set(item.w, item.h, item.d);
+    }, false, true);
 }
 
 // ── Dimensões com Ruas Mais Espaçosas e Avenidas Amplas ─────
@@ -451,6 +557,8 @@ function addBox({
     mesh.rotation.y = rotationY;
     mesh.castShadow = cast;
     mesh.receiveShadow = receive;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
     parent.add(mesh);
     return mesh;
 }
@@ -459,6 +567,8 @@ function createGround() {
     const terrain = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), materials.terrain);
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
+    terrain.matrixAutoUpdate = false;
+    terrain.updateMatrix();
     cityGroup.add(terrain);
 }
 
@@ -598,6 +708,7 @@ function createBlockBase(block) {
 function createResidentialBlock(block) {
     const group = new THREE.Group();
     group.name = `residential-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     const lots = [
@@ -611,11 +722,11 @@ function createResidentialBlock(block) {
         if (lotIndex > 5 && local() < 0.35) return;
 
         if (lotIndex === 4 && local() > 0.65) {
-            createLowRise(group, block.x + lx, block.z + lz, block.index + lotIndex, 6.0 + local() * 5.0);
+            createLowRise(group, block.x + lx, block.z + lz, block.index + lotIndex, 6.0 + local() * 5.0, block.index);
         } else if (lotIndex === 2 && local() > 0.75) {
-            createShopHouse(group, block.x + lx, block.z + lz, block.index + lotIndex);
+            createShopHouse(group, block.x + lx, block.z + lz, block.index + lotIndex, 1, block.index);
         } else {
-            createDetachedHouse(group, block.x + lx, block.z + lz, block.index + lotIndex, 0.9 + local() * 0.3);
+            createDetachedHouse(group, block.x + lx, block.z + lz, block.index + lotIndex, 0.9 + local() * 0.3, block.index);
         }
     });
 
@@ -625,6 +736,7 @@ function createResidentialBlock(block) {
 function createMixedUrbanBlock(block) {
     const group = new THREE.Group();
     group.name = `mixed-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     const distance = Math.hypot(block.row - GRID_RADIUS, block.col - GRID_RADIUS);
@@ -640,13 +752,13 @@ function createMixedUrbanBlock(block) {
         const z = block.z + lz + (noise(block.row, block.col + lotIndex, 9) - 0.5) * 0.7;
 
         if (lotIndex === 4 && distance < 5.0 && n > 0.4) {
-            createOfficeTower(group, x, z, block.index + lotIndex, 20 + n * 30);
+            createOfficeTower(group, x, z, block.index + lotIndex, 20 + n * 30, block.index);
         } else if (n > 0.65) {
-            createSmallApartment(group, x, z, block.index + lotIndex, 9 + n * 14);
+            createSmallApartment(group, x, z, block.index + lotIndex, 9 + n * 14, block.index);
         } else if (n > 0.35) {
-            createShopHouse(group, x, z, block.index + lotIndex);
+            createShopHouse(group, x, z, block.index + lotIndex, 1, block.index);
         } else {
-            createDetachedHouse(group, x, z, block.index + lotIndex, 0.9 + n * 0.3);
+            createDetachedHouse(group, x, z, block.index + lotIndex, 0.9 + n * 0.3, block.index);
         }
     });
 
@@ -656,6 +768,7 @@ function createMixedUrbanBlock(block) {
 function createCommercialBlock(block) {
     const group = new THREE.Group();
     group.name = `commercial-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     const distance = Math.hypot(block.row - GRID_RADIUS, block.col - GRID_RADIUS);
@@ -668,18 +781,18 @@ function createCommercialBlock(block) {
         const [lx, lz] = towerLots[i];
         const n = noise(block.row + i, block.col, 21);
         const height = (distance < 2.0 ? 36 : 24) + n * (distance < 2.0 ? 54 : 38);
-        createOfficeTower(group, block.x + lx, block.z + lz, block.index + i, height);
+        createOfficeTower(group, block.x + lx, block.z + lz, block.index + i, height, block.index);
     }
 }
 
-function createDetachedHouse(parent, x, z, seed, scale = 1) {
+function createDetachedHouse(parent, x, z, seed, scale = 1, blockIndex = 0) {
     const n = noise(seed, seed + 1, 30);
     const width = (3.6 + n * 1.8) * scale;
     const depth = (3.4 + noise(seed, seed + 2, 31) * 1.9) * scale;
     const height = (2.2 + noise(seed, seed + 3, 32) * 2.2) * scale;
     const roofMaterial = noise(seed, seed + 4, 33) > 0.45 ? materials.roofTerracotta : materials.roofDark;
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'residential', parent, roofMaterial });
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'residential', parent, roofMaterial, blockIndex });
     
     const rw = width + 0.4;
     const rd = depth/2 + 0.4;
@@ -687,52 +800,54 @@ function createDetachedHouse(parent, x, z, seed, scale = 1) {
     const rRot = 0.5;
     const r1 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z + rd/2 - 0.2, material: roofMaterial, parent, cast: true, receive: true });
     r1.rotation.x = -rRot;
+    r1.updateMatrix();
     const r2 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z - rd/2 + 0.2, material: roofMaterial, parent, cast: true, receive: true });
     r2.rotation.x = rRot;
+    r2.updateMatrix();
 
-    addBox({ width: 1.5, height: 0.1, depth: 1.0, x: x, y: height * 0.4, z: z + depth/2 + 0.5, material: materials.concrete, parent, cast: true, receive: true });
+    addBox({ width: 1.5, height: 0.1, depth: 1.0, x: x, y: height * 0.4, z: z + depth/2 + 0.5, material: materials.concrete, parent, cast: false, receive: true });
     
     if (noise(seed, seed + 5, 34) > 0.6) {
-        addBox({ width: 0.4, height: height + 2.0, depth: 0.4, x: x - width * 0.2, y: height, z: z, material: materials.industryWall, parent, cast: true, receive: true });
+        addBox({ width: 0.4, height: height + 2.0, depth: 0.4, x: x - width * 0.2, y: height, z: z, material: materials.industryWall, parent, cast: false, receive: true });
     }
     
-    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z + depth/2 + 1.5, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z - depth/2 - 1.5, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x + width/2 + 1, y: 0.3, z: z, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x - width/2 - 1, y: 0.3, z: z, material: materials.concrete, parent, cast: true, receive: true });
+    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z + depth/2 + 1.5, material: materials.concrete, parent, cast: false, receive: true });
+    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z - depth/2 - 1.5, material: materials.concrete, parent, cast: false, receive: true });
+    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x + width/2 + 1, y: 0.3, z: z, material: materials.concrete, parent, cast: false, receive: true });
+    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x - width/2 - 1, y: 0.3, z: z, material: materials.concrete, parent, cast: false, receive: true });
 
     cityStats.houses += 1;
 }
 
-function createShopHouse(parent, x, z, seed, scale = 1) {
+function createShopHouse(parent, x, z, seed, scale = 1, blockIndex = 0) {
     const width = (4.6 + noise(seed, seed + 7, 40) * 2.8) * scale;
     const depth = (4.4 + noise(seed, seed + 8, 41) * 2.5) * scale;
     const height = (3.4 + noise(seed, seed + 9, 42) * 2.8) * scale;
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'shop', parent, roofMaterial: materials.roofConcrete });
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'shop', parent, roofMaterial: materials.roofConcrete, blockIndex });
     addBox({ width: width + 0.24, height: 0.34, depth: depth + 0.24, x, y: height + 0.17, z, material: materials.roofConcrete, parent, cast: false, receive: true });
 
     cityStats.midRises += 1;
 }
 
-function createLowRise(parent, x, z, seed, height) {
+function createLowRise(parent, x, z, seed, height, blockIndex = 0) {
     const width = 5.6 + noise(seed, seed + 11, 50) * 2.8;
     const depth = 5.4 + noise(seed, seed + 12, 51) * 2.8;
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'office', parent });
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'office', parent, blockIndex });
     addBox({ width: width * 0.72, height: 0.42, depth: depth * 0.7, x, y: height + 0.21, z, material: materials.roofConcrete, parent, cast: false, receive: true });
     addRooftopDetails(parent, x, z, width, depth, height, seed);
 
     cityStats.midRises += 1;
 }
 
-function createSmallApartment(parent, x, z, seed, height) {
+function createSmallApartment(parent, x, z, seed, height, blockIndex = 0) {
     const width = 5.2 + noise(seed, seed + 13, 60) * 2.2;
     const depth = 5.2 + noise(seed, seed + 14, 61) * 2.5;
     const isGlass = noise(seed, seed + 15, 62) > 0.62;
     const facadeType = isGlass ? 'glass' : 'office';
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent });
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, blockIndex });
 
     const balconyCount = Math.max(1, Math.floor(height / 5));
     addBalconies(parent, x, z, width, depth, height, seed, balconyCount);
@@ -741,16 +856,16 @@ function createSmallApartment(parent, x, z, seed, height) {
     cityStats.midRises += 1;
 }
 
-function createOfficeTower(parent, x, z, seed, height) {
+function createOfficeTower(parent, x, z, seed, height, blockIndex = 0) {
     const width = 5.2 + noise(seed, seed + 16, 70) * 3.8;
     const depth = 5.2 + noise(seed, seed + 17, 71) * 3.9;
     const materialRoll = noise(seed, seed + 18, 72);
     const facadeType = materialRoll > 0.4 ? 'glass' : 'office';
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent });
+    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, blockIndex });
 
     if (noise(seed, seed + 19, 73) > 0.58) {
-        addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent, cast: true, receive: true });
+        addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent, cast: false, receive: true });
     }
 
     addRooftopDetails(parent, x, z, width, depth, height, seed);
@@ -765,6 +880,7 @@ function createOfficeTower(parent, x, z, seed, height) {
 function createHospital(block) {
     const group = new THREE.Group();
     group.name = `hospital-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     addBox({ width: 16.5, height: 6.5, depth: 13.5, x: block.x, z: block.z, material: materials.hospitalWhite, parent: group, cast: true, receive: true });
@@ -780,6 +896,8 @@ function createHospital(block) {
     helipad.position.set(block.x + 5.5, 8.88, block.z - 2.8);
     helipad.castShadow = false;
     helipad.receiveShadow = true;
+    helipad.matrixAutoUpdate = false;
+    helipad.updateMatrix();
     group.add(helipad);
 
     cityStats.hospitals += 1;
@@ -788,6 +906,7 @@ function createHospital(block) {
 function createIndustrialBlock(block) {
     const group = new THREE.Group();
     group.name = `industrial-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     const buildings = 2 + Math.floor(noise(block.row, block.col, 90) * 2);
@@ -798,7 +917,7 @@ function createIndustrialBlock(block) {
         const depth = 7.0 + noise(block.row, block.col + i, 94) * 5.0;
         const height = 4.4 + noise(block.row + i, block.col + i, 95) * 4.2;
 
-        addBuildingWithFacade({ width, height, depth, x, z, seed: block.index + i * 7, type: 'industrial', parent: group, roofMaterial: materials.industryRoof });
+        addBuildingWithFacade({ width, height, depth, x, z, seed: block.index + i * 7, type: 'industrial', parent: group, roofMaterial: materials.industryRoof, blockIndex: block.index });
         addBox({ width: width + 0.34, height: 0.48, depth: depth + 0.34, x, y: height + 0.24, z, material: materials.industryRoof, parent: group, cast: false, receive: true });
     }
 
@@ -817,6 +936,8 @@ function createChimney(parent, x, z) {
     chimney.position.set(x, 4.5, z);
     chimney.castShadow = true;
     chimney.receiveShadow = true;
+    chimney.matrixAutoUpdate = false;
+    chimney.updateMatrix();
     parent.add(chimney);
 }
 
@@ -836,22 +957,17 @@ function createPark(block) {
 function createServiceBlock(block) {
     const group = new THREE.Group();
     group.name = `services-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     addBox({ width: 8.5, height: 5.5, depth: 7.0, x: block.x - 4.5, z: block.z - 3.0, material: materials.concrete, parent: group, cast: true, receive: true });
     addBox({ width: 8.0, height: 4.0, depth: 9.0, x: block.x + 4.8, z: block.z + 3.2, material: materials.industryWall, parent: group, cast: true, receive: true });
 }
 
-function addPerimeterFence(group, bx, bz) {
-    addBox({ width: BLOCK_SIZE, height: 1.2, depth: 0.1, x: bx, y: 0.6, z: bz + BLOCK_SIZE/2, material: detailMats.railing, parent: group, cast: true, receive: true });
-    addBox({ width: BLOCK_SIZE, height: 1.2, depth: 0.1, x: bx, y: 0.6, z: bz - BLOCK_SIZE/2, material: detailMats.railing, parent: group, cast: true, receive: true });
-    addBox({ width: 0.1, height: 1.2, depth: BLOCK_SIZE, x: bx + BLOCK_SIZE/2, y: 0.6, z: bz, material: detailMats.railing, parent: group, cast: true, receive: true });
-    addBox({ width: 0.1, height: 1.2, depth: BLOCK_SIZE, x: bx - BLOCK_SIZE/2, y: 0.6, z: bz, material: detailMats.railing, parent: group, cast: true, receive: true });
-}
-
 function createPowerPlant(block) {
     const group = new THREE.Group();
     group.name = `power_plant-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
     
     addBox({ width: 14, height: 8, depth: 10, x: block.x, y: 4, z: block.z - 2, material: materials.industryWall, parent: group, cast: true, receive: true });
@@ -862,6 +978,8 @@ function createPowerPlant(block) {
         const stack = new THREE.Mesh(stackGeo, materials.concrete);
         stack.position.set(block.x - 4 + i*4, 10, block.z + 5);
         stack.castShadow = true;
+        stack.matrixAutoUpdate = false;
+        stack.updateMatrix();
         group.add(stack);
     }
 
@@ -875,6 +993,8 @@ function createPowerPlant(block) {
     const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.concrete);
     coolingTower.position.set(block.x + 6, 0, block.z + 5);
     coolingTower.castShadow = true;
+    coolingTower.matrixAutoUpdate = false;
+    coolingTower.updateMatrix();
     group.add(coolingTower);
 
     addPerimeterFence(group, block.x, block.z);
@@ -883,12 +1003,14 @@ function createPowerPlant(block) {
 function createSolarFarm(block) {
     const group = new THREE.Group();
     group.name = `solar_farm-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     const panelCount = 8 * 8;
     const imesh = new THREE.InstancedMesh(unitBoxGeometry, materials.solar, panelCount);
     imesh.castShadow = true;
     imesh.receiveShadow = true;
+    imesh.matrixAutoUpdate = false;
     
     const dummy = new THREE.Object3D();
     let i = 0;
@@ -901,9 +1023,12 @@ function createSolarFarm(block) {
             imesh.setMatrixAt(i++, dummy.matrix);
         }
     }
+    imesh.instanceMatrix.needsUpdate = true;
+    imesh.updateMatrix();
     group.add(imesh);
 
     const supportMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.concrete, panelCount);
+    supportMesh.matrixAutoUpdate = false;
     i = 0;
     for (let r=0; r<8; r++) {
         for (let c=0; c<8; c++) {
@@ -914,6 +1039,8 @@ function createSolarFarm(block) {
             supportMesh.setMatrixAt(i++, dummy.matrix);
         }
     }
+    supportMesh.instanceMatrix.needsUpdate = true;
+    supportMesh.updateMatrix();
     group.add(supportMesh);
 
     addBox({ width: 3, height: 2, depth: 3, x: block.x, y: 1, z: block.z + 8, material: materials.concrete, parent: group, cast: true, receive: true });
@@ -925,6 +1052,7 @@ const windTurbines = [];
 function createWindFarm(block) {
     const group = new THREE.Group();
     group.name = `wind_farm-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     for (let i=0; i<4; i++) {
@@ -934,6 +1062,8 @@ function createWindFarm(block) {
         const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 25, 8), materials.concrete);
         tower.position.set(x, 12.5, z);
         tower.castShadow = true;
+        tower.matrixAutoUpdate = false;
+        tower.updateMatrix();
         group.add(tower);
 
         addBox({ width: 1.5, height: 1.5, depth: 3, x: x, y: 25, z: z, material: materials.concrete, parent: group, cast: true, receive: true });
@@ -945,6 +1075,8 @@ function createWindFarm(block) {
             const blade = new THREE.Mesh(unitBoxGeometry, materials.concrete);
             blade.scale.set(0.2, 10, 0.4);
             blade.position.set(0, 5, 0);
+            blade.matrixAutoUpdate = false;
+            blade.updateMatrix();
             
             const pivot = new THREE.Group();
             pivot.rotation.z = (b * Math.PI * 2) / 3;
@@ -961,6 +1093,7 @@ function createWindFarm(block) {
 function createSubstation(block) {
     const group = new THREE.Group();
     group.name = `substation-${block.index}`;
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
     for (let i=0; i<3; i++) {
@@ -996,6 +1129,8 @@ function buildInstancedTrees() {
     trunkMesh.castShadow = true;
     canopyMesh.castShadow = true;
     canopyMesh.receiveShadow = true;
+    trunkMesh.matrixAutoUpdate = false;
+    canopyMesh.matrixAutoUpdate = false;
 
     const dummy = new THREE.Object3D();
 
@@ -1013,6 +1148,8 @@ function buildInstancedTrees() {
 
     trunkMesh.instanceMatrix.needsUpdate = true;
     canopyMesh.instanceMatrix.needsUpdate = true;
+    trunkMesh.updateMatrix();
+    canopyMesh.updateMatrix();
 
     cityGroup.add(trunkMesh);
     cityGroup.add(canopyMesh);
@@ -1025,6 +1162,7 @@ function buildInstancedBases() {
     const baseMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.sidewalk, count);
     baseMesh.receiveShadow = true;
     baseMesh.castShadow = false;
+    baseMesh.matrixAutoUpdate = false;
 
     const dummy = new THREE.Object3D();
     baseInstancesData.forEach((b, i) => {
@@ -1035,6 +1173,7 @@ function buildInstancedBases() {
     });
 
     baseMesh.instanceMatrix.needsUpdate = true;
+    baseMesh.updateMatrix();
     cityGroup.add(baseMesh);
 }
 
@@ -1067,6 +1206,7 @@ function createTrafficHints() {
         const carMesh = new THREE.InstancedMesh(unitBoxGeometry, mat, matchingCars.length);
         carMesh.castShadow = false;
         carMesh.receiveShadow = false;
+        carMesh.matrixAutoUpdate = false;
 
         const dummy = new THREE.Object3D();
         matchingCars.forEach((c, idx) => {
@@ -1077,6 +1217,7 @@ function createTrafficHints() {
         });
 
         carMesh.instanceMatrix.needsUpdate = true;
+        carMesh.updateMatrix();
         cityGroup.add(carMesh);
     });
 }
@@ -1107,6 +1248,8 @@ function collectPoleInstance(group, x, z, angleRad = 0, opts = {}) {
         bulbPos.add(new THREE.Vector3(x, 0, z));
         bulb.position.copy(bulbPos);
         bulb.name = "streetLampBulb";
+        bulb.matrixAutoUpdate = false;
+        bulb.updateMatrix();
         group.add(bulb);
     }
 
@@ -1130,6 +1273,8 @@ function buildInstancedPoles() {
         const crossArmMesh = new THREE.InstancedMesh(poleCrossArmGeo, powerMats.woodPole, poleShaftData.length);
         shaftMesh.castShadow = true;
         crossArmMesh.castShadow = false;
+        shaftMesh.matrixAutoUpdate = false;
+        crossArmMesh.matrixAutoUpdate = false;
 
         poleShaftData.forEach((p, i) => {
             dummy.position.set(p.x, 2.6, p.z);
@@ -1145,6 +1290,8 @@ function buildInstancedPoles() {
 
         shaftMesh.instanceMatrix.needsUpdate = true;
         crossArmMesh.instanceMatrix.needsUpdate = true;
+        shaftMesh.updateMatrix();
+        crossArmMesh.updateMatrix();
         cityGroup.add(shaftMesh);
         cityGroup.add(crossArmMesh);
     }
@@ -1152,6 +1299,7 @@ function buildInstancedPoles() {
     if (poleTransData.length > 0) {
         const transMesh = new THREE.InstancedMesh(transformerGeo, powerMats.transformer, poleTransData.length);
         transMesh.castShadow = false;
+        transMesh.matrixAutoUpdate = false;
 
         poleTransData.forEach((p, i) => {
             dummy.position.set(p.x + 0.3, 3.6, p.z);
@@ -1162,12 +1310,14 @@ function buildInstancedPoles() {
         });
 
         transMesh.instanceMatrix.needsUpdate = true;
+        transMesh.updateMatrix();
         cityGroup.add(transMesh);
     }
 
     if (poleLampData.length > 0) {
         const lampHeadMesh = new THREE.InstancedMesh(lampHeadGeo, powerMats.streetLamp, poleLampData.length);
         lampHeadMesh.castShadow = false;
+        lampHeadMesh.matrixAutoUpdate = false;
 
         poleLampData.forEach((p, i) => {
             const headPos = new THREE.Vector3(0, 4.65, 1.15);
@@ -1182,32 +1332,47 @@ function buildInstancedPoles() {
         });
 
         lampHeadMesh.instanceMatrix.needsUpdate = true;
+        lampHeadMesh.updateMatrix();
         cityGroup.add(lampHeadMesh);
     }
 }
 
+// Otimização de Fiação Elétrica: Mescla os trechos de cabo em um único LineSegments por nó
 function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat, overloadMat, sagAmount = 0.35) {
     const count = Math.min(posArray1.length, posArray2.length);
+    const segments = 8;
+    const vertices = [];
+
     for (let k = 0; k < count; k++) {
         const p1 = posArray1[k];
         const p2 = posArray2[k];
 
-        const points = [];
-        const segments = 8;
-        for (let i = 0; i <= segments; i++) {
+        let prevPoint = p1.clone();
+        for (let i = 1; i <= segments; i++) {
             const t = i / segments;
             const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
             const z = THREE.MathUtils.lerp(p1.z, p2.z, t);
             const yLinear = THREE.MathUtils.lerp(p1.y, p2.y, t);
             const sag = 4 * sagAmount * t * (1 - t);
-            points.push(new THREE.Vector3(x, yLinear - sag, z));
-        }
+            const currentPoint = new THREE.Vector3(x, yLinear - sag, z);
 
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, wireMaterial);
-        line.userData = { originalMat: wireMaterial, blackoutMat, overloadMat };
-        group.add(line);
+            vertices.push(prevPoint.x, prevPoint.y, prevPoint.z);
+            vertices.push(currentPoint.x, currentPoint.y, currentPoint.z);
+
+            prevPoint = currentPoint;
+        }
     }
+
+    if (vertices.length === 0) return;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+    const lineSegments = new THREE.LineSegments(geometry, wireMaterial);
+    lineSegments.userData = { originalMat: wireMaterial, blackoutMat, overloadMat };
+    lineSegments.matrixAutoUpdate = false;
+    lineSegments.updateMatrix();
+    group.add(lineSegments);
 }
 
 function createPowerGrid() {
@@ -1220,6 +1385,7 @@ function createPowerGrid() {
             const group = new THREE.Group();
             group.name = `powergrid-h-${r}-${side}`;
             group.userData = { isGridNode: true, active: true };
+            group.matrixAutoUpdate = false;
             cityGroup.add(group);
             powerGridObjects.push(group);
 
@@ -1244,6 +1410,7 @@ function createPowerGrid() {
             const group = new THREE.Group();
             group.name = `powergrid-v-${c}-${side}`;
             group.userData = { isGridNode: true, active: true };
+            group.matrixAutoUpdate = false;
             cityGroup.add(group);
             powerGridObjects.push(group);
 
@@ -1285,6 +1452,7 @@ function createTransmissionLines() {
     const group = new THREE.Group();
     group.name = 'transmission_lines';
     group.userData = { isGridNode: true, active: true };
+    group.matrixAutoUpdate = false;
     cityGroup.add(group);
     powerGridObjects.push(group);
 
@@ -1315,6 +1483,8 @@ function createTransmissionLines() {
                 u: edge.u,
                 v: edge.v
             };
+            line.matrixAutoUpdate = false;
+            line.updateMatrix();
             group.add(line);
         }
     });
@@ -1363,7 +1533,7 @@ function setupRaycaster() {
 
 function setWireMaterial(group, matKey) {
     group.children.forEach(child => {
-        if (child.isLine && child.userData[matKey]) {
+        if ((child.isLine || child.isLineSegments) && child.userData[matKey]) {
             child.material = child.userData[matKey];
         }
     });
@@ -1430,9 +1600,10 @@ function forceNight() {
     });
 
     cityGroup.traverse(child => {
-        if (child.isMesh && child.material && child.material.length) {
-            child.material.forEach(mat => {
-                if (mat.map && mat.emissive) {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                if (mat && mat.map && mat.emissive) {
                     mat.emissive.setHex(0x555544);
                     mat.emissiveIntensity = 1.0;
                 }
@@ -1458,9 +1629,10 @@ function powerPlantFailure() {
                 cityGroup.children.forEach(c => {
                     if (c.name.includes(`${group.userData.row * GRID_SIZE + group.userData.col}`)) {
                         c.traverse(mesh => {
-                            if (mesh.isMesh && mesh.material && mesh.material.length) {
-                                mesh.material.forEach(mat => {
-                                    if (mat.map && mat.emissive) {
+                            if (mesh.isMesh && mesh.material) {
+                                const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                                mats.forEach(mat => {
+                                    if (mat && mat.map && mat.emissive) {
                                         mat.emissive.setHex(0x000000);
                                     }
                                 });
@@ -1503,9 +1675,10 @@ function resetCity() {
     }
 
     cityGroup.traverse(child => {
-        if (child.isMesh && child.material && child.material.length) {
-            child.material.forEach(mat => {
-                if (mat.map && mat.emissive) {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                if (mat && mat.map && mat.emissive) {
                     mat.emissive.setHex(0x000000);
                     mat.emissiveIntensity = 1;
                 }
@@ -1529,29 +1702,26 @@ function setupUI() {
     });
 
     document.getElementById('btn-overload')?.addEventListener('click', () => {
-        // Simula sobrecarga alterando o clima para "chuvoso" (reduz geração solar) e avança 2h no pico
         citySimulator.alterarClima('chuvoso');
         citySimulator.tick(2);
-        simulateOverload(); // mantém efeito visual de fios amarelos globalmente
+        simulateOverload();
     });
 
     document.getElementById('btn-night')?.addEventListener('click', () => {
         forceNight();
-        // Sincroniza o motor: avança para as 20h (horário de pico noturno)
         citySimulator.estado.hora = 20;
         citySimulator.tick(0);
     });
 
     document.getElementById('btn-failure')?.addEventListener('click', () => {
-        // Simula corte da linha principal da Usina → Subestação Norte
         const logs = citySimulator.simularFalha('Subestacao_Central', 'Subestacao_Norte');
-        powerPlantFailure(); // cascata visual nos fios
+        powerPlantFailure();
         console.log('[UI] Falha injetada. Self-Healing respondeu:', logs);
     });
 
     document.getElementById('btn-reset')?.addEventListener('click', () => {
-        resetCity();        // reseta luzes e fios no Three.js
-        citySimulator.resetar(); // reseta todo o motor de IA
+        resetCity();
+        citySimulator.resetar();
     });
 
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
@@ -1580,7 +1750,7 @@ function createLighting() {
     const sun = new THREE.DirectionalLight(0xfff3d7, 3.1);
     sun.position.set(-180, 250, 130);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024); // 1024x1024: leve, nítido e super rápido
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.near = 40;
     sun.shadow.camera.far = 650;
     sun.shadow.camera.left = -260;
@@ -1604,6 +1774,9 @@ function initializeScene() {
     buildInstancedTrees();
     buildInstancedBases();
     buildInstancedPoles();
+    buildInstancedRooftopsAndDetails();
+
+    cityGroup.updateMatrixWorld(true);
 
     setupRaycaster();
     setupUI();
@@ -1613,8 +1786,6 @@ function initializeScene() {
 
 // ── Sincronização Visual com o Motor de IA ───────────────────
 
-// Dicionário de tradução: ID interno do grafo JS → userData.backendId no Three.js
-// (os dois são idênticos neste projeto — o mapeamento já foi alinhado)
 const ID_MAP = {
     'Subestacao_Central':   'Subestacao_Central',
     'Subestacao_Norte':     'Subestacao_Norte',
@@ -1629,9 +1800,6 @@ const ID_MAP = {
     'Escolas':              'Escolas',
     'Fazenda_Solar':        'Fazenda_Solar'
 };
-
-// Estado de emissão salvo para restaurar brilho de janelas à noite
-const _savedEmissive = new Map();
 
 function syncSceneWithBackend(grafo, estado, logs) {
     if (logs && logs.length > 0) {
@@ -1651,7 +1819,6 @@ function syncSceneWithBackend(grafo, estado, logs) {
         if (!bloco3D) continue;
 
         bloco3D.traverse(child => {
-            // Lâmpadas de iluminação pública no bloco
             if (child.name === "streetLampBulb" && child.material) {
                 if (!node.status_energizado) {
                     child.material.emissive?.setHex(0x000000);
@@ -1668,11 +1835,9 @@ function syncSceneWithBackend(grafo, estado, logs) {
                 if (!mat) return;
 
                 if (!node.status_energizado) {
-                    // APAGÃO NO BAIRRO: remove emissão de luz de janelas e fachadas
                     if (mat.emissive) mat.emissive.setHex(0x000000);
                     if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0;
                 } else {
-                    // ENERGIZADO: se for noite, acende as janelas do bairro
                     if (sceneLightState === 'night' && mat.map && mat.emissive) {
                         mat.emissive.setHex(0x555544);
                         mat.emissiveIntensity = 1.0;
@@ -1698,11 +1863,11 @@ function syncSceneWithBackend(grafo, estado, logs) {
             const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
 
             if (!edge.status_ativa) {
-                linha.material = powerMats.wireBlackout; // Linha rompida / desativada
+                linha.material = powerMats.wireBlackout;
             } else if (taxaCarga > 0.90) {
-                linha.material = powerMats.wireOverload; // Laranja = superaquecimento / sobrecarga
+                linha.material = powerMats.wireOverload;
             } else {
-                linha.material = powerMats.wireGlowing;  // Ciano = operação normal ativa
+                linha.material = powerMats.wireGlowing;
             }
         }
     }
@@ -1717,8 +1882,6 @@ function syncSceneWithBackend(grafo, estado, logs) {
 }
 
 // ── Instanciação do Simulador ─────────────────────────────────
-// O CitySimulator é criado ANTES de initializeScene() para que
-// setupUI() já possa referenciar seus métodos.
 const citySimulator = new CitySimulator({ onSync: syncSceneWithBackend });
 
 initializeScene();
@@ -1765,7 +1928,6 @@ function animate() {
             }
         } else {
             const altitude = camera.position.y;
-            // Velocidade adaptativa fluida: ~13 m/s no chão, ~90 m/s no céu
             const baseSpeed = Math.max(12, 10 + Math.pow(Math.max(0, altitude) / 14, 1.2) * 4.5);
 
             forwardVector.set(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -1791,7 +1953,6 @@ function animate() {
 
             camera.position.addScaledVector(flyVelocity, delta);
 
-            // Trava do Solo para não afundar no asfalto
             if (camera.position.y < 1.4) {
                 camera.position.y = 1.4;
                 if (flyVelocity.y < 0) flyVelocity.y = 0;
