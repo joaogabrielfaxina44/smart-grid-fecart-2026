@@ -22,9 +22,9 @@ const renderer = new THREE.WebGLRenderer({
     stencil: false
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Máxima fluidez sem sobrecarregar GPU
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap; // PCFShadowMap: leve, nitido e ultrarrápido
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -331,7 +331,6 @@ function initSharedFacadeMaterials() {
 
 initSharedFacadeMaterials();
 
-// Cache de materiais por bloco para isolamento de apagões com zero clonagem individual por edifício
 const blockFacadeMaterialsCache = new Map();
 
 function getBlockFacadeMaterial(type, seed, blockIndex = 0) {
@@ -454,22 +453,18 @@ function buildInstancedRooftopsAndDetails() {
         cityGroup.add(imesh);
     };
 
-    // Caixas d'água
     createBatch(waterTankGeo, detailMats.waterTank, waterTankInstancesData, (d, item) => {
         d.scale.set(item.scaleRadius, item.scaleY, item.scaleRadius);
     }, false, true);
 
-    // Unidades de Ar-Condicionado
     createBatch(unitBoxGeometry, detailMats.acUnit, acUnitInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
     }, false, true);
 
-    // Antenas de Cobertura
     createBatch(unitBoxGeometry, detailMats.antenna, antennaInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
     }, false, false);
 
-    // Sacadas & Corrimãos
     createBatch(unitBoxGeometry, detailMats.balcony, balconyInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
     }, false, true);
@@ -478,7 +473,6 @@ function buildInstancedRooftopsAndDetails() {
         d.scale.set(item.w, item.h, item.d);
     }, false, false);
 
-    // Marqueses e Portais de Entrada
     createBatch(unitBoxGeometry, detailMats.ledge, canopyLedgeInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
     }, false, true);
@@ -487,7 +481,6 @@ function buildInstancedRooftopsAndDetails() {
         d.scale.set(item.w, item.h, item.d);
     }, false, false);
 
-    // Cercas Perimetrais
     createBatch(unitBoxGeometry, detailMats.railing, fenceInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
     }, false, true);
@@ -495,12 +488,12 @@ function buildInstancedRooftopsAndDetails() {
 
 // ── Dimensões com Ruas Mais Espaçosas e Avenidas Amplas ─────
 
-const GRID_SIZE = 15; // 15x15 quadras = 225 quadras de altíssima performance
+const GRID_SIZE = 15;
 const GRID_RADIUS = Math.floor(GRID_SIZE / 2);
-const BLOCK_SIZE = 20; // Tamanho de cada quadra
-const ROAD_WIDTH = 10; // Ruas muito mais largas (espaçamento espaçoso de 10 metros!)
-const SIDEWALK_WIDTH = 2.4; // Calçadas amplas e arborizadas
-const ROAD_STEP = BLOCK_SIZE + ROAD_WIDTH; // 30 metros de passo entre quadras
+const BLOCK_SIZE = 20;
+const ROAD_WIDTH = 10;
+const SIDEWALK_WIDTH = 2.4;
+const ROAD_STEP = BLOCK_SIZE + ROAD_WIDTH;
 const EDGE_MARGIN = 20;
 const WORLD_SIZE = GRID_SIZE * BLOCK_SIZE + (GRID_SIZE + 1) * ROAD_WIDTH + EDGE_MARGIN * 2;
 const ROAD_COORDS = Array.from({ length: GRID_SIZE + 1 }, (_, index) => (index - GRID_SIZE / 2) * ROAD_STEP);
@@ -632,15 +625,12 @@ function getBlockBackendId(row, col, type) {
         if (row === GRID_RADIUS - 3 && col === GRID_RADIUS - 1) return 'Hospital_Prontomed';
     }
     
-    // Subestações auxiliares do backend
     if (row === 3 && col === 3) return 'Subestacao_Norte';
     if (row === GRID_SIZE - 4 && col === GRID_SIZE - 4) return 'Subestacao_Sul';
     
-    // Bairros residenciais
     if (row === 2 && col === 5) return 'Bairro_Residencial_A';
     if (row === 12 && col === 3) return 'Bairro_Residencial_B';
     
-    // Zonas comerciais/industriais/serviços
     if (row === 6 && col === 6) return 'Centro_Comercial';
     if (row === 7 && col === 8) return 'Shopping_Metropolitano';
     if (row === 12 && col === 11) return 'Zona_Industrial_A';
@@ -681,7 +671,6 @@ function createDistricts() {
             else if (block.type === 'wind_farm') createWindFarm(block);
             else if (block.type === 'substation') createSubstation(block);
 
-            // Se um grupo foi adicionado, atribui o backendId e guarda a posição
             if (cityGroup.children.length > initialChildrenCount) {
                 const addedElement = cityGroup.children[cityGroup.children.length - 1];
                 if (addedElement.isGroup && backendId) {
@@ -1337,7 +1326,6 @@ function buildInstancedPoles() {
     }
 }
 
-// Otimização de Fiação Elétrica: Mescla os trechos de cabo em um único LineSegments por nó
 function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat, overloadMat, sagAmount = 0.35) {
     const count = Math.min(posArray1.length, posArray2.length);
     const segments = 8;
@@ -1514,7 +1502,6 @@ function setupRaycaster() {
         if (intersects.length > 0) {
             let target = intersects[0].object;
 
-            // Se clicou em uma linha de transmissão da Smart Grid
             if (target.userData?.backendEdgeId && target.userData.u && target.userData.v) {
                 console.log(`[3D Click] Falha simulada pelo clique na linha: ${target.userData.u} ↔ ${target.userData.v}`);
                 citySimulator.simularFalha(target.userData.u, target.userData.v);

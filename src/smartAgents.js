@@ -248,42 +248,42 @@ export class CityGraph {
         }
     }
 
-    // ── Topologia padrão da cidade (espelha o backend Python) ───
+    // ── Topologia padrão da cidade (espelha a configuração base) ───
 
     _buildDefaultCity() {
         // Subestações
-        this._addNode('Subestacao_Central', { nome: 'Subestação Central',     tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 1200 });
-        this._addNode('Subestacao_Norte',   { nome: 'Subestação Norte',       tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 650  });
-        this._addNode('Subestacao_Sul',     { nome: 'Subestação Sul',         tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 700  });
+        this._addNode('Subestacao_Central', { nome: 'Subestação Central',     tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 4500 });
+        this._addNode('Subestacao_Norte',   { nome: 'Subestação Norte',       tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 2200 });
+        this._addNode('Subestacao_Sul',     { nome: 'Subestação Sul',         tipo: 'Subestação', demanda_base_kw: 0,    prioridade: 0, is_subestacao: true, capacidade_maxima_kw: 2300 });
 
         // Consumidores
-        this._addNode('Hospital_Prontomed',     { nome: 'Hospital Prontomed',         tipo: 'Hospital',         demanda_base_kw: 180,  prioridade: 1 });
-        this._addNode('Bairro_Residencial_A',   { nome: 'Bairro Residencial A',        tipo: 'Residencial',      demanda_base_kw: 260,  prioridade: 3 });
-        this._addNode('Bairro_Residencial_B',   { nome: 'Bairro Residencial B',        tipo: 'Residencial',      demanda_base_kw: 230,  prioridade: 3 });
-        this._addNode('Centro_Comercial',       { nome: 'Centro Comercial',            tipo: 'Comercial',        demanda_base_kw: 320,  prioridade: 2 });
-        this._addNode('Shopping_Metropolitano', { nome: 'Shopping Metropolitano',      tipo: 'Grandes Edifícios',demanda_base_kw: 300,  prioridade: 2 });
-        this._addNode('Zona_Industrial_A',      { nome: 'Parque Industrial A',         tipo: 'Indústria',        demanda_base_kw: 420,  prioridade: 2 });
-        this._addNode('Data_Center',            { nome: 'Data Center Municipal',       tipo: 'Grandes Edifícios',demanda_base_kw: 220,  prioridade: 1 });
-        this._addNode('Escolas',                { nome: 'Distrito Educacional',        tipo: 'Público',          demanda_base_kw: 140,  prioridade: 2 });
-        this._addNode('Fazenda_Solar',          { nome: 'Fazenda Solar Urbana',        tipo: 'Geração',          demanda_base_kw: -280, prioridade: 0 });
+        this._addNode('Hospital_Prontomed',     { nome: 'Hospital Prontomed',         tipo: 'Hospital',         demanda_base_kw: 600,  prioridade: 1 });
+        this._addNode('Bairro_Residencial_A',   { nome: 'Bairro Residencial A',        tipo: 'Residencial',      demanda_base_kw: 400,  prioridade: 3 });
+        this._addNode('Bairro_Residencial_B',   { nome: 'Bairro Residencial B',        tipo: 'Residencial',      demanda_base_kw: 400,  prioridade: 3 });
+        this._addNode('Centro_Comercial',       { nome: 'Centro Comercial',            tipo: 'Comercial',        demanda_base_kw: 1000, prioridade: 2 });
+        this._addNode('Shopping_Metropolitano', { nome: 'Shopping Metropolitano',      tipo: 'Grandes Edifícios',demanda_base_kw: 800,  prioridade: 2 });
+        this._addNode('Zona_Industrial_A',      { nome: 'Zona Industrial A',           tipo: 'Indústria',        demanda_base_kw: 1500, prioridade: 2 });
+        this._addNode('Data_Center',            { nome: 'Data Center Municipal',       tipo: 'Grandes Edifícios',demanda_base_kw: 500,  prioridade: 1 });
+        this._addNode('Escolas',                { nome: 'Distrito Educacional',        tipo: 'Público',          demanda_base_kw: 300,  prioridade: 2 });
+        this._addNode('Fazenda_Solar',          { nome: 'Fazenda Solar Urbana',        tipo: 'Geração',          demanda_base_kw: -500, prioridade: 0 });
 
-        // Linhas de transmissão
-        this._addEdge('Subestacao_Central', 'Subestacao_Norte',   700, 4.0);
-        this._addEdge('Subestacao_Central', 'Subestacao_Sul',     750, 4.5);
-        this._addEdge('Subestacao_Central', 'Hospital_Prontomed', 350, 2.0);
-        this._addEdge('Subestacao_Norte',   'Bairro_Residencial_A', 360, 2.4);
-        this._addEdge('Subestacao_Norte',   'Centro_Comercial',   420, 2.0);
-        this._addEdge('Subestacao_Norte',   'Data_Center',        280, 1.8);
-        this._addEdge('Subestacao_Sul',     'Bairro_Residencial_B', 350, 2.2);
-        this._addEdge('Subestacao_Sul',     'Shopping_Metropolitano', 380, 2.1);
-        this._addEdge('Subestacao_Sul',     'Zona_Industrial_A',  520, 3.2);
-        this._addEdge('Subestacao_Sul',     'Escolas',            220, 1.6);
-        this._addEdge('Fazenda_Solar',      'Subestacao_Norte',   300, 3.0);
-        this._addEdge('Fazenda_Solar',      'Subestacao_Sul',     260, 4.0);
-        this._addEdge('Hospital_Prontomed', 'Data_Center',        180, 2.6);
-        this._addEdge('Centro_Comercial',   'Shopping_Metropolitano', 220, 3.3);
-        this._addEdge('Bairro_Residencial_A','Bairro_Residencial_B', 180, 5.0);
-        this._addEdge('Zona_Industrial_A',  'Shopping_Metropolitano', 250, 2.8);
+        // Linhas de transmissão (capacidades ajustadas para 4500 kW)
+        this._addEdge('Subestacao_Central', 'Subestacao_Norte',   2200, 4.0);
+        this._addEdge('Subestacao_Central', 'Subestacao_Sul',     2300, 4.5);
+        this._addEdge('Subestacao_Central', 'Hospital_Prontomed', 1200, 2.0);
+        this._addEdge('Subestacao_Norte',   'Bairro_Residencial_A', 900, 2.4);
+        this._addEdge('Subestacao_Norte',   'Centro_Comercial',   1500, 2.0);
+        this._addEdge('Subestacao_Norte',   'Data_Center',        900, 1.8);
+        this._addEdge('Subestacao_Sul',     'Bairro_Residencial_B', 900, 2.2);
+        this._addEdge('Subestacao_Sul',     'Shopping_Metropolitano', 1200, 2.1);
+        this._addEdge('Subestacao_Sul',     'Zona_Industrial_A',  2200, 3.2);
+        this._addEdge('Subestacao_Sul',     'Escolas',            600, 1.6);
+        this._addEdge('Fazenda_Solar',      'Subestacao_Norte',   1000, 3.0);
+        this._addEdge('Fazenda_Solar',      'Subestacao_Sul',     1000, 4.0);
+        this._addEdge('Hospital_Prontomed', 'Data_Center',        800, 2.6);
+        this._addEdge('Centro_Comercial',   'Shopping_Metropolitano', 800, 3.3);
+        this._addEdge('Bairro_Residencial_A','Bairro_Residencial_B', 800, 5.0);
+        this._addEdge('Zona_Industrial_A',  'Shopping_Metropolitano', 1000, 2.8);
     }
 }
 
@@ -322,7 +322,8 @@ export class PeakHourAgent extends BaseAgent {
             fatores = { Residencial: 0.80, Comercial: 1.20, 'Grandes Edifícios': 1.20, Indústria: 1.15, Hospital: 1.00, Público: 1.10 };
             periodo = 'Comercial';
         } else if (hora < 21) {
-            fatores = { Residencial: 1.60, Comercial: 1.10, 'Grandes Edifícios': 1.10, Indústria: 0.90, Hospital: 1.05, Público: 0.95 };
+            // Lógica de Pico (18h-21h): Residencial 1.8x, Hospital 1.1x, Indústria 0.9x e Comercial 0.8x
+            fatores = { Residencial: 1.80, Comercial: 0.80, 'Grandes Edifícios': 0.80, Indústria: 0.90, Hospital: 1.10, Público: 0.85 };
             periodo = 'Pico Noturno';
         } else {
             fatores = { Residencial: 1.10, Comercial: 0.75, 'Grandes Edifícios': 0.75, Indústria: 0.70, Hospital: 0.95, Público: 0.80 };
@@ -423,11 +424,11 @@ export class PredictiveMaintAgent extends BaseAgent {
     }
 }
 
-// ── Agente 4: Resposta à Demanda ──────────────────────────────
+// ── Agente 4: Resposta à Demanda (Corte de Emergência) ────────
 export class DemandResponseAgent extends BaseAgent {
     constructor() {
         super('DemandResponseAgent', 40);
-        this.cortesAtivos = new Map(); // nodeId → multiplicador (ex: 0.75)
+        this.cortesAtivos = new Map(); // nodeId → multiplicador
     }
 
     executar(grafo, estado) {
@@ -442,25 +443,32 @@ export class DemandResponseAgent extends BaseAgent {
         const demanda   = grafo.demandaTotalKw();
         const capacidade = grafo.capacidadeTotalSubestacoes();
         const temAlerta  = estado.alertasManutencao?.length > 0;
-        const cargaGlobal = demanda > capacidade * 0.95;
+        const cargaGlobal = demanda > capacidade * 0.90;
+        const temFalha    = [...grafo.edges.values()].some(e => !e.status_ativa);
 
-        if (!temAlerta && !cargaGlobal) {
+        if (!temAlerta && !cargaGlobal && !temFalha) {
             this._aplicarCortes(grafo);
             if (this.cortesAtivos.size > 0) logs.push(`[${this.nome}] Restaurando energia gradualmente (+5%/tick)`);
             return logs;
         }
 
-        if (cargaGlobal) logs.push(`[${this.nome}] 🔴 GATILHO: Demanda (${demanda.toFixed(0)} kW) > 95% da capacidade. Corte de 30%.`);
-        if (temAlerta)   logs.push(`[${this.nome}] 🟠 GATILHO: Alertas de superaquecimento ativos. Corte de 25%.`);
+        logs.push(`[${this.nome}] 🔴 CORTE DE EMERGÊNCIA ATIVADO: 30% Indústria | 20% Comércio | 0% Hospital`);
 
+        // Corte de Emergência: 30% Indústria, 20% Comércio, 0% Hospital (prioridade 1)
         for (const [nodeId, node] of grafo.nodes) {
-            if (node.is_subestacao || node.prioridade === 1) continue; // Nunca corta Hospital/Data Center
-            const tipoAlvo = node.tipo === 'Comercial' || node.tipo === 'Indústria' || node.tipo === 'Grandes Edifícios';
-            if (!tipoAlvo) continue;
+            if (node.is_subestacao || node.prioridade === 1) continue; // Hospital (0% de corte)
 
-            const novaMult = cargaGlobal ? 0.70 : 0.75;
-            const atualMult = this.cortesAtivos.get(nodeId) ?? 1.0;
-            this.cortesAtivos.set(nodeId, Math.min(atualMult, novaMult));
+            let novaMult = 1.0;
+            if (node.tipo === 'Indústria') {
+                novaMult = 0.70; // 30% de corte
+            } else if (node.tipo === 'Comercial' || node.tipo === 'Grandes Edifícios') {
+                novaMult = 0.80; // 20% de corte
+            }
+
+            if (novaMult < 1.0) {
+                const atualMult = this.cortesAtivos.get(nodeId) ?? 1.0;
+                this.cortesAtivos.set(nodeId, Math.min(atualMult, novaMult));
+            }
         }
 
         this._aplicarCortes(grafo);
