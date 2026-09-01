@@ -365,10 +365,11 @@ function getSharedFacadeMaterial(type, seed) {
 }
 
 function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent = cityGroup, roofMaterial = null }) {
-    const wallMat = getSharedFacadeMaterial(type, seed);
+    const baseWallMat = getSharedFacadeMaterial(type, seed);
+    const wallMat = baseWallMat.clone();
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
-    // [+X, -X, +Y, -Y, +Z, -Z] -> paredes compartilham a mesma referência de material
+    // [+X, -X, +Y, -Y, +Z, -Z] -> paredes compartilham a mesma referência de material clonado
     const mesh = new THREE.Mesh(unitBoxGeometry, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
     mesh.position.set(x, height / 2, z);
     mesh.scale.set(width, height, depth);
@@ -1340,10 +1341,16 @@ function createTransmissionLines() {
                 originalMat: powerMats.wireGlowing, 
                 blackoutMat: powerMats.wireBlackout, 
                 overloadMat: powerMats.wireOverload,
+<<<<<<< HEAD
                 criticalMat: powerMats.wireCritical,
                 backendEdgeId: `${edge.u}-${edge.v}`,
                 currentSpeed: 5.0, // Velocidade padrão do dash (multiplicador)
                 broken: false
+=======
+                backendEdgeId: `${edge.u}-${edge.v}`,
+                u: edge.u,
+                v: edge.v
+>>>>>>> cbb3e97715c27ba8abb99f48a3a392f6f69b6a3e
             };
             group.add(line);
         }
@@ -1371,6 +1378,7 @@ function setupRaycaster() {
 
         raycaster.setFromCamera(mouse, camera);
 
+<<<<<<< HEAD
         const interactables = [...cityGroup.children, ...powerGridObjects];
         // Encontrar objetos com backendId ou backendEdgeId
         const intersects = raycaster.intersectObjects(interactables, true);
@@ -1381,6 +1389,26 @@ function setupRaycaster() {
             // Subir na hierarquia até achar um com ID
             while (obj && !obj.userData?.backendId && !obj.userData?.backendEdgeId && obj !== scene) {
                 obj = obj.parent;
+=======
+        const interactables = [];
+        powerGridObjects.forEach(g => {
+            g.children.forEach(c => interactables.push(c));
+        });
+
+        const intersects = raycaster.intersectObjects(interactables, false);
+        if (intersects.length > 0) {
+            let target = intersects[0].object;
+
+            // Se clicou em uma linha de transmissão da Smart Grid
+            if (target.userData?.backendEdgeId && target.userData.u && target.userData.v) {
+                console.log(`[3D Click] Falha simulada pelo clique na linha: ${target.userData.u} ↔ ${target.userData.v}`);
+                citySimulator.simularFalha(target.userData.u, target.userData.v);
+                return;
+            }
+
+            while (target.parent && !target.parent.userData.isGridNode) {
+                target = target.parent;
+>>>>>>> cbb3e97715c27ba8abb99f48a3a392f6f69b6a3e
             }
             if (obj && (obj.userData?.backendId || obj.userData?.backendEdgeId)) {
                 foundHover = obj;
@@ -1668,6 +1696,10 @@ function setupUI() {
         });
     }
 
+    document.getElementById('btn-tick')?.addEventListener('click', () => {
+        citySimulator.tick(1);
+    });
+
     document.getElementById('btn-overload')?.addEventListener('click', () => {
         // Simula sobrecarga alterando o clima para "chuvoso" (reduz geração solar) e avança 2h no pico
         citySimulator.alterarClima('chuvoso');
@@ -1791,7 +1823,7 @@ function syncSceneWithBackend(grafo, estado, logs) {
         console.groupEnd();
     }
 
-    // ── 1. Sincronizar Nós (Apagão por bairro) ──────────────
+    // ── 1. Sincronizar Nós (Apagão por bairro / Edifícios) ──────
     for (const [nodeId, node] of grafo.nodes) {
         const threeId = ID_MAP[nodeId];
         if (!threeId) continue;
@@ -1802,19 +1834,36 @@ function syncSceneWithBackend(grafo, estado, logs) {
         if (!bloco3D) continue;
 
         bloco3D.traverse(child => {
+            // Lâmpadas de iluminação pública no bloco
+            if (child.name === "streetLampBulb" && child.material) {
+                if (!node.status_energizado) {
+                    child.material.emissive?.setHex(0x000000);
+                } else if (sceneLightState === 'night') {
+                    child.material.emissive?.setHex(0xffaa22);
+                }
+                return;
+            }
+
             if (!child.isMesh || !child.material) return;
 
-            if (!node.status_energizado) {
-                // APAGÃO: remove toda emissão e escurece
-                if (child.material.emissive) child.material.emissive.setHex(0x000000);
-                if (child.material.emissiveIntensity !== undefined) child.material.emissiveIntensity = 0;
-            } else {
-                // ENERGIZADO: restaura emissão da janela se for modo noite
-                if (sceneLightState === 'night' && child.material.map && child.material.emissive) {
-                    child.material.emissive.setHex(0x555544);
-                    child.material.emissiveIntensity = 1.0;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                if (!mat) return;
+
+                if (!node.status_energizado) {
+                    // APAGÃO NO BAIRRO: remove emissão de luz de janelas e fachadas
+                    if (mat.emissive) mat.emissive.setHex(0x000000);
+                    if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0;
+                } else {
+                    // ENERGIZADO: se for noite, acende as janelas do bairro
+                    if (sceneLightState === 'night' && mat.map && mat.emissive) {
+                        mat.emissive.setHex(0x555544);
+                        mat.emissiveIntensity = 1.0;
+                    } else if (sceneLightState === 'day' && mat.emissive) {
+                        mat.emissive.setHex(0x000000);
+                    }
                 }
-            }
+            });
         });
     }
 
@@ -1822,15 +1871,17 @@ function syncSceneWithBackend(grafo, estado, logs) {
     const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
     if (transLinesGroup) {
         for (const edge of grafo.edges.values()) {
-            const edgeId = `${edge.origem}-${edge.destino}`;
+            const edgeKey1 = `${edge.origem}-${edge.destino}`;
+            const edgeKey2 = `${edge.destino}-${edge.origem}`;
             const linha = transLinesGroup.children.find(
-                l => l.userData?.backendEdgeId === edgeId
+                l => l.userData?.backendEdgeId === edgeKey1 || l.userData?.backendEdgeId === edgeKey2
             );
             if (!linha) continue;
 
             const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
 
             if (!edge.status_ativa) {
+<<<<<<< HEAD
                 linha.material = powerMats.wireBlackout;
                 linha.userData.broken = true;
             } else if (taxaCarga >= 0.95) {
@@ -1845,6 +1896,13 @@ function syncSceneWithBackend(grafo, estado, logs) {
                 linha.material = powerMats.wireGlowing;  // Azul neon
                 linha.userData.currentSpeed = 5.0;       // Velocidade normal
                 linha.userData.broken = false;
+=======
+                linha.material = powerMats.wireBlackout; // Linha rompida / desativada
+            } else if (taxaCarga > 0.90) {
+                linha.material = powerMats.wireOverload; // Laranja = superaquecimento / sobrecarga
+            } else {
+                linha.material = powerMats.wireGlowing;  // Ciano = operação normal ativa
+>>>>>>> cbb3e97715c27ba8abb99f48a3a392f6f69b6a3e
             }
         }
     }
@@ -1887,6 +1945,10 @@ function animate() {
         windTurbines.forEach(rotor => {
             rotor.rotation.z += delta * 1.5;
         });
+    }
+
+    if (powerMats.wireOverload) {
+        powerMats.wireOverload.opacity = 0.65 + Math.sin(now * 0.007) * 0.3;
     }
 
     if (cameraMode === 'fly') {
