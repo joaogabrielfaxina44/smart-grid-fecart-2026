@@ -40,6 +40,33 @@
                     </button>
                 </div>
                 
+                <style>
+                    .hud-item strong {
+                        color: #00d2ff;
+                    }
+
+                    #xray-tooltip {
+                        background: rgba(10, 15, 25, 0.95);
+                        border: 1px solid #00d2ff;
+                        box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
+                        flex-direction: column;
+                        gap: 4px;
+                        pointer-events: none;
+                        padding: 8px 12px;
+                        font-size: 12px;
+                    }
+                    
+                    #xray-tooltip #tooltip-title {
+                        color: #ffffff;
+                        font-size: 14px;
+                    }
+                    
+                    #xray-tooltip #tooltip-desc {
+                        white-space: pre-line;
+                        color: #b0c4de;
+                    }
+                </style>
+                
                 <div class="control-group">
                     <h3>Câmera & Navegação</h3>
                     <button id="btn-toggle-cam-mode" class="control-btn primary">
@@ -105,6 +132,13 @@
             <div class="hud-item">⚡ <strong id="hud-sim-demanda">— kW</strong></div>
             <div class="hud-divider"></div>
             <div class="hud-item">🌤️ <strong id="hud-sim-clima">ensolarado</strong></div>
+        </div>
+        
+        <!-- X-Ray Tooltip -->
+        <div id="xray-tooltip" class="hud-pill hidden" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 100; opacity: 0; transition: opacity 0.2s;">
+            <div class="hud-item"><strong id="tooltip-title">Title</strong></div>
+            <div class="hud-divider"></div>
+            <div class="hud-item" id="tooltip-desc">Desc</div>
         </div>
     </div>
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CitySimulator } from './smartAgents.js';
+import { VFXManager } from './vfx.js';
 
 const container = document.getElementById('canvas-container');
 
@@ -248,8 +249,9 @@ const powerMats = {
     transformer: new THREE.MeshStandardMaterial({ color: 0x32373d, roughness: 0.4, metalness: 0.5 }),
     streetLamp: new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5 }),
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
-    wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }),
-    wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }),
+    wireGlowing: new THREE.LineDashedMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.85, linewidth: 3, dashSize: 2, gapSize: 2 }),  // Azul neon (< 85%)
+    wireOverload: new THREE.LineDashedMaterial({ color: 0xffa500, transparent: true, opacity: 0.95, linewidth: 4, dashSize: 3, gapSize: 2 }), // Laranja (>= 85%)
+    wireCritical: new THREE.LineDashedMaterial({ color: 0xff0000, transparent: true, opacity: 0.95, linewidth: 5, dashSize: 4, gapSize: 1.5 }), // Vermelho (>= 95%)
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
 };
 
@@ -264,29 +266,43 @@ const sharedFacadeMaterials = {
 };
 
 function initSharedFacadeMaterials() {
+    // Nova Paleta Low-Poly Limpa (Tons Pastéis Modernos)
     const wallColors = {
-        residential: ['#d8c9b0', '#c9c3b4', '#e1d8c8', '#c6ad99'],
-        office: ['#b8bcc0', '#a0a4a8', '#c4c1b7', '#9ea5a8'],
-        glass: ['#6a8a9a', '#7a9aaa', '#5a7a8a'],
-        shop: ['#d8c9b0', '#c4b8a0', '#e1d8c8'],
-        industrial: ['#9c9688', '#a8a298', '#8a8880']
+        residential: ['#f2ebdb', '#e2dfd2', '#dcd8c0', '#eae2d6'], // Beges e areia
+        office:      ['#d4d9de', '#c9cfd3', '#b8c3cc', '#e3e8eb'], // Cinza azulado claro
+        glass:       ['#86b1c2', '#9fc5d6', '#72a0b4'],             // Vidros pastéis brilhantes
+        shop:        ['#dfccbe', '#e6dacb', '#d3bfb1'],             // Tons pêssego/terra
+        industrial:  ['#bdc2b8', '#aab2a8', '#99a399']              // Verde sálvia / Concreto
     };
 
     const windowColors = ['#1a2838', '#1e2e3e', '#222e3a', '#182434'];
-    const litColors = ['#d4c87a', '#c8bc6a', '#a0b8d0', '#dcc468'];
+    const litColors = ['#ffedb3', '#ffe494', '#fff5cc', '#ffd666']; // Amarelo/Laranja neon
 
     Object.keys(wallColors).forEach(type => {
         const pal = wallColors[type];
         pal.forEach((baseColor, idx) => {
             const cw = 128;
             const ch = 128;
+            
+            // Canvas principal (Albedo/Diffuse)
             const canvas = document.createElement('canvas');
             canvas.width = cw;
             canvas.height = ch;
             const ctx = canvas.getContext('2d');
 
+            // Canvas de Emissão (Apenas janelas acesas)
+            const canvasEmissive = document.createElement('canvas');
+            canvasEmissive.width = cw;
+            canvasEmissive.height = ch;
+            const ctxEmissive = canvasEmissive.getContext('2d');
+
+            // Fundo Albedo
             ctx.fillStyle = baseColor;
             ctx.fillRect(0, 0, cw, ch);
+
+            // Fundo Emissivo (Preto = não emite luz)
+            ctxEmissive.fillStyle = '#000000';
+            ctxEmissive.fillRect(0, 0, cw, ch);
 
             const isGlass = type === 'glass';
             const cols = isGlass ? 6 : 5;
@@ -301,11 +317,19 @@ function initSharedFacadeMaterials() {
                     const wx = Math.round(c * spX + (spX - ww) / 2);
                     const wy = Math.round(r * spY + (spY - wh) / 2);
                     const isLit = (r + c + idx) % 5 === 0;
+
+                    // Desenha janela no Albedo
                     ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
                     ctx.fillRect(wx, wy, ww, wh);
-                    ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
+                    ctx.strokeStyle = isGlass ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(wx, wy, ww, wh);
+
+                    // Se estiver acesa, desenha brilho no EmissiveMap
+                    if (isLit) {
+                        ctxEmissive.fillStyle = ctx.fillStyle; // mesma cor neon
+                        ctxEmissive.fillRect(wx, wy, ww, wh);
+                    }
                 }
             }
 
@@ -314,12 +338,18 @@ function initSharedFacadeMaterials() {
             texture.wrapT = THREE.RepeatWrapping;
             texture.colorSpace = THREE.SRGBColorSpace;
 
+            const emissiveTexture = new THREE.CanvasTexture(canvasEmissive);
+            emissiveTexture.wrapS = THREE.RepeatWrapping;
+            emissiveTexture.wrapT = THREE.RepeatWrapping;
+            emissiveTexture.colorSpace = THREE.SRGBColorSpace;
+
             const mat = new THREE.MeshStandardMaterial({
                 map: texture,
-                roughness: isGlass ? 0.26 : 0.8,
-                metalness: isGlass ? 0.12 : 0,
-                transparent: isGlass,
-                opacity: isGlass ? 0.9 : 1.0
+                emissiveMap: emissiveTexture,
+                emissive: new THREE.Color(0xffffff),
+                emissiveIntensity: 0.0, // Começa apagado de dia, liga à noite
+                roughness: isGlass ? 0.2 : 0.9,
+                metalness: isGlass ? 0.3 : 0.0
             });
 
             sharedFacadeMaterials[type].push(mat);
@@ -680,25 +710,23 @@ function createDetachedHouse(parent, x, z, seed, scale = 1) {
 
     addBuildingWithFacade({ width, height, depth, x, z, seed, type: 'residential', parent, roofMaterial });
     
-    const rw = width + 0.4;
-    const rd = depth/2 + 0.4;
-    const ry = height + 0.6;
-    const rRot = 0.5;
-    const r1 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z + rd/2 - 0.2, material: roofMaterial, parent, cast: true, receive: true });
-    r1.rotation.x = -rRot;
-    const r2 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z - rd/2 + 0.2, material: roofMaterial, parent, cast: true, receive: true });
-    r2.rotation.x = rRot;
+    // Telhado Sólido Low-Poly (Pirâmide)
+    const roofHeight = 1.5;
+    const roofGeo = new THREE.ConeGeometry(Math.max(width, depth) * 0.8, roofHeight, 4);
+    const roofMesh = new THREE.Mesh(roofGeo, roofMaterial);
+    roofMesh.position.set(x, height + roofHeight / 2, z);
+    roofMesh.rotation.y = Math.PI / 4; // Alinhar faces com as paredes
+    roofMesh.castShadow = true;
+    roofMesh.receiveShadow = true;
+    parent.add(roofMesh);
 
-    addBox({ width: 1.5, height: 0.1, depth: 1.0, x: x, y: height * 0.4, z: z + depth/2 + 0.5, material: materials.concrete, parent, cast: true, receive: true });
-    
+    // Chaminé opcional
     if (noise(seed, seed + 5, 34) > 0.6) {
-        addBox({ width: 0.4, height: height + 2.0, depth: 0.4, x: x - width * 0.2, y: height, z: z, material: materials.industryWall, parent, cast: true, receive: true });
+        addBox({ width: 0.6, height: 2.0, depth: 0.6, x: x - width * 0.2, y: height + 0.5, z: z, material: materials.concrete, parent, cast: true, receive: true });
     }
     
-    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z + depth/2 + 1.5, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: width + 2, height: 0.6, depth: 0.1, x: x, y: 0.3, z: z - depth/2 - 1.5, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x + width/2 + 1, y: 0.3, z: z, material: materials.concrete, parent, cast: true, receive: true });
-    addBox({ width: 0.1, height: 0.6, depth: depth + 3, x: x - width/2 - 1, y: 0.3, z: z, material: materials.concrete, parent, cast: true, receive: true });
+    // Base/quintal simples
+    addBox({ width: width + 2, height: 0.2, depth: depth + 2, x: x, y: 0.1, z: z, material: materials.concrete, parent, cast: true, receive: true });
 
     cityStats.houses += 1;
 }
@@ -1292,25 +1320,30 @@ function createTransmissionLines() {
         const p2 = backendNodePositions[edge.v];
 
         if (p1 && p2) {
-            const points = [];
-            const segments = 16;
-            const sagAmount = 4.0;
-            for (let i = 0; i <= segments; i++) {
-                const t = i / segments;
-                const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
-                const z = THREE.MathUtils.lerp(p1.z, p2.z, t);
-                const yLinear = THREE.MathUtils.lerp(p1.y, p2.y, t);
-                const sag = 4 * sagAmount * t * (1 - t);
-                points.push(new THREE.Vector3(x, yLinear - sag, z));
-            }
+            // Curva Bezier Quadrática (pontos p1 e p2 na base/altura 8, controle no ar)
+            const controlPoint = new THREE.Vector3(
+                (p1.x + p2.x) / 2,
+                Math.max(p1.y, p2.y) + 35.0, // Altura para evitar colisão com prédios altos
+                (p1.z + p2.z) / 2
+            );
 
+            const curve = new THREE.QuadraticBezierCurve3(p1, controlPoint, p2);
+            
+            // Gerar geometria suave
+            const points = curve.getPoints(32);
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            
             const line = new THREE.Line(geometry, powerMats.wireGlowing);
+            line.computeLineDistances(); // Essencial para o LineDashedMaterial funcionar
+
             line.userData = { 
                 originalMat: powerMats.wireGlowing, 
                 blackoutMat: powerMats.wireBlackout, 
                 overloadMat: powerMats.wireOverload,
-                backendEdgeId: `${edge.u}-${edge.v}`
+                criticalMat: powerMats.wireCritical,
+                backendEdgeId: `${edge.u}-${edge.v}`,
+                currentSpeed: 5.0, // Velocidade padrão do dash (multiplicador)
+                broken: false
             };
             group.add(line);
         }
@@ -1323,31 +1356,153 @@ const raycaster = new THREE.Raycaster();
 raycaster.params.Line.threshold = 1.5;
 const mouse = new THREE.Vector2();
 
+let hoveredObject = null;
+
 function setupRaycaster() {
-    renderer.domElement.addEventListener('click', (event) => {
-        if (mouseMovedDistance > 8) return;
+    const tooltip = document.getElementById('xray-tooltip');
+    const tooltipTitle = document.getElementById('tooltip-title');
+    const tooltipDesc = document.getElementById('tooltip-desc');
+
+    renderer.domElement.addEventListener('pointermove', (event) => {
+        if (isDraggingMouse) return;
 
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
 
-        const interactables = [];
-        powerGridObjects.forEach(g => {
-            g.children.forEach(c => interactables.push(c));
-        });
-
-        const intersects = raycaster.intersectObjects(interactables, false);
-        if (intersects.length > 0) {
-            let target = intersects[0].object;
-            while (target.parent && !target.parent.userData.isGridNode) {
-                target = target.parent;
+        const interactables = [...cityGroup.children, ...powerGridObjects];
+        // Encontrar objetos com backendId ou backendEdgeId
+        const intersects = raycaster.intersectObjects(interactables, true);
+        
+        let foundHover = null;
+        for (let i = 0; i < intersects.length; i++) {
+            let obj = intersects[i].object;
+            // Subir na hierarquia até achar um com ID
+            while (obj && !obj.userData?.backendId && !obj.userData?.backendEdgeId && obj !== scene) {
+                obj = obj.parent;
             }
-            if (target.parent && target.parent.userData.isGridNode) {
-                triggerBlackout(target.parent);
+            if (obj && (obj.userData?.backendId || obj.userData?.backendEdgeId)) {
+                foundHover = obj;
+                break;
+            }
+        }
+
+        if (hoveredObject !== foundHover) {
+            // Reverter highlight anterior
+            if (hoveredObject) {
+                hoveredObject.traverse(child => {
+                    if (child.material && child.material.emissive) {
+                        child.material.emissiveIntensity = child.userData.origEmissiveInt || 0;
+                    }
+                });
+            }
+
+            hoveredObject = foundHover;
+
+            // Aplicar novo highlight
+            if (hoveredObject) {
+                hoveredObject.traverse(child => {
+                    if (child.material && child.material.emissive) {
+                        child.userData.origEmissiveInt = child.material.emissiveIntensity;
+                        child.material.emissiveIntensity = 0.5;
+                        child.material.emissive.setHex(0xffffff);
+                    }
+                });
+                
+                tooltip.classList.remove('hidden');
+                tooltip.style.opacity = '1';
+                
+                if (hoveredObject.userData.backendId) {
+                    const id = hoveredObject.userData.backendId;
+                    tooltipTitle.innerText = `🏢 ${id.replace(/_/g, ' ')}`;
+                    
+                    const nodeState = citySimulator.grafo.nodes.get(id);
+                    if (nodeState) {
+                        tooltipDesc.innerText = `Demanda: ${nodeState.demanda.toFixed(0)} kW\nStatus: ${nodeState.energizado ? 'Energizado ⚡' : 'Sem Energia ❌'}`;
+                    } else {
+                        tooltipDesc.innerText = 'Desconectado da Rede Principal';
+                    }
+                } else if (hoveredObject.userData.backendEdgeId) {
+                    const id = hoveredObject.userData.backendEdgeId;
+                    tooltipTitle.innerText = `🔌 Linha ${id}`;
+                    
+                    const [u, v] = id.split('-');
+                    let edgeState = null;
+                    if (citySimulator.grafo.edges.has(u) && citySimulator.grafo.edges.get(u).has(v)) {
+                        edgeState = citySimulator.grafo.edges.get(u).get(v);
+                    }
+                    if (edgeState) {
+                        const cap = (edgeState.fluxo / edgeState.capacidade) * 100;
+                        tooltipDesc.innerText = `Carga: ${cap.toFixed(1)}%\nStatus: ${edgeState.ativa ? 'Ativa 🟢' : 'Rompida 🔴'}`;
+                    } else {
+                        tooltipDesc.innerText = 'Dados indisponíveis';
+                    }
+                }
+            } else {
+                tooltip.style.opacity = '0';
+                setTimeout(() => { if (!hoveredObject) tooltip.classList.add('hidden'); }, 200);
+            }
+        }
+
+        // Posicionar Tooltip (se ativo)
+        if (hoveredObject) {
+            tooltip.style.left = `${event.clientX + 15}px`;
+            tooltip.style.top = `${event.clientY + 15}px`;
+        }
+    });
+
+    // Multiclick (Caos)
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+        if (mouseMovedDistance > 8 || !hoveredObject) return;
+
+        // Botão Esquerdo (Cortar Fio)
+        if (event.button === 0 && hoveredObject.userData.backendEdgeId) {
+            const [origem, destino] = hoveredObject.userData.backendEdgeId.split('-');
+            hoveredObject.traverse(child => {
+                if (child.isLine) {
+                    child.material = powerMats.wireBlackout;
+                    child.userData.broken = true;
+                    // Tocar VFX no meio da linha
+                    if (window.vfxManager) {
+                        const midPoint = new THREE.Vector3();
+                        child.geometry.computeBoundingSphere();
+                        midPoint.copy(child.geometry.boundingSphere.center);
+                        midPoint.applyMatrix4(child.matrixWorld);
+                        window.vfxManager.createSparks(midPoint);
+                    }
+                }
+            });
+            console.log(`[USER] Linha rompida: ${origem} -> ${destino}`);
+            citySimulator.simularFalha(origem, destino);
+        }
+
+        // Botão Direito (Sobrecarga em Prédio)
+        if (event.button === 2 && hoveredObject.userData.backendId) {
+            const id = hoveredObject.userData.backendId;
+            const nodeState = citySimulator.grafo.nodes.get(id);
+            
+            if (nodeState && nodeState.tipo !== 'gerador') {
+                console.log(`[USER] Induzindo Sobrecarga no: ${id}`);
+                nodeState.demanda *= 3.0; // Puxa 300% de carga instantaneamente
+                
+                hoveredObject.traverse(child => {
+                    if (child.material && child.material.emissive) {
+                        child.material.emissive.setHex(0xff0000); // Pisca Vermelho
+                        child.material.emissiveIntensity = 1.0;
+                    }
+                });
+
+                if (window.vfxManager) window.vfxManager.triggerShake(0.5);
+                
+                // Força orquestrador a recalcular
+                citySimulator.sincronizarFrontEnd();
             }
         }
     });
+    
+    // Desativar menu de contexto do botão direito
+    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 function setWireMaterial(group, matKey) {
@@ -1590,6 +1745,8 @@ function initializeScene() {
     buildInstancedBases();
     buildInstancedPoles();
 
+    window.vfxManager = new VFXManager(scene);
+
     setupRaycaster();
     setupUI();
     setCameraMode('fly');
@@ -1621,7 +1778,16 @@ const _savedEmissive = new Map();
 function syncSceneWithBackend(grafo, estado, logs) {
     if (logs && logs.length > 0) {
         console.groupCollapsed(`[SmartGrid] Tick ${estado.hora}h — ${logs.length} ação(ões)`);
-        logs.forEach(l => console.log(l));
+        logs.forEach(l => {
+            console.log(l);
+            if (l.includes('[Self-Healing]') && l.includes('Rede restaurada via rotas alternativas')) {
+                // Toca shockwave na Subestação Central
+                if (window.vfxManager && backendNodePositions['Subestacao_Central']) {
+                    window.vfxManager.createShockwave(backendNodePositions['Subestacao_Central']);
+                    window.vfxManager.triggerShake(1.0);
+                }
+            }
+        });
         console.groupEnd();
     }
 
@@ -1666,10 +1832,19 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
             if (!edge.status_ativa) {
                 linha.material = powerMats.wireBlackout;
-            } else if (taxaCarga > 0.90) {
-                linha.material = powerMats.wireOverload; // laranja = superaquecimento
+                linha.userData.broken = true;
+            } else if (taxaCarga >= 0.95) {
+                linha.material = powerMats.wireCritical; // Vermelho
+                linha.userData.currentSpeed = 15.0;      // 3x mais rápido
+                linha.userData.broken = false;
+            } else if (taxaCarga >= 0.85) {
+                linha.material = powerMats.wireOverload; // Laranja
+                linha.userData.currentSpeed = 10.0;      // 2x mais rápido
+                linha.userData.broken = false;
             } else {
-                linha.material = powerMats.wireGlowing;  // azul = normal ativo
+                linha.material = powerMats.wireGlowing;  // Azul neon
+                linha.userData.currentSpeed = 5.0;       // Velocidade normal
+                linha.userData.broken = false;
             }
         }
     }
@@ -1775,6 +1950,17 @@ function animate() {
         orbitControls.update();
     }
 
+    // Atualizar animação dos fios
+    const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
+    if (transLinesGroup) {
+        transLinesGroup.children.forEach(linha => {
+            if (linha.isLine && linha.material.isLineDashedMaterial && !linha.userData.broken) {
+                const speed = linha.userData.currentSpeed || 5.0;
+                linha.material.dashOffset -= delta * speed;
+            }
+        });
+    }
+
     if (scene.fog && sceneLightState === 'day') {
         const altitude = camera.position.y;
         const t = Math.max(0, Math.min(1, altitude / 250));
@@ -1788,7 +1974,21 @@ function animate() {
         scene.fog.color.setRGB(r / 255, g / 255, b / 255);
     }
 
+    let originalCamPos = null;
+    let shakeOffset = null;
+    if (window.vfxManager) {
+        shakeOffset = window.vfxManager.update(delta, camera);
+        if (shakeOffset && (shakeOffset.x !== 0 || shakeOffset.y !== 0 || shakeOffset.z !== 0)) {
+            originalCamPos = camera.position.clone();
+            camera.position.add(shakeOffset);
+        }
+    }
+
     renderer.render(scene, camera);
+
+    if (originalCamPos) {
+        camera.position.copy(originalCamPos);
+    }
 }
 
 function handleResize() {
