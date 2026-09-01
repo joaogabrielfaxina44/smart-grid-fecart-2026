@@ -23,12 +23,32 @@ export class CityGraph {
     }
 
     _addNode(id, props) {
-        this.nodes.set(id, {
+        const nodeData = {
             id,
             demanda_kw_atual: props.demanda_base_kw,
             status_energizado: true,
             ...props
-        });
+        };
+
+        // Getter/Setter aliases em Português / CamelCase para conveniência
+        if (!Object.prototype.hasOwnProperty.call(nodeData, 'demandaBase')) {
+            Object.defineProperty(nodeData, 'demandaBase', {
+                get() { return this.demanda_base_kw; },
+                set(v) { this.demanda_base_kw = v; },
+                configurable: true,
+                enumerable: true
+            });
+        }
+        if (!Object.prototype.hasOwnProperty.call(nodeData, 'demandaAtual')) {
+            Object.defineProperty(nodeData, 'demandaAtual', {
+                get() { return this.demanda_kw_atual; },
+                set(v) { this.demanda_kw_atual = v; },
+                configurable: true,
+                enumerable: true
+            });
+        }
+
+        this.nodes.set(id, nodeData);
         this.adjacency.set(id, []);
     }
 
@@ -43,6 +63,25 @@ export class CityGraph {
             fluxo_kw_atual: 0,
             status_ativa: true
         };
+
+        // Getter/Setter aliases em Português / CamelCase para conveniência
+        if (!Object.prototype.hasOwnProperty.call(edgeData, 'capacidadeMax')) {
+            Object.defineProperty(edgeData, 'capacidadeMax', {
+                get() { return this.capacidade_maxima_kw; },
+                set(v) { this.capacidade_maxima_kw = v; },
+                configurable: true,
+                enumerable: true
+            });
+        }
+        if (!Object.prototype.hasOwnProperty.call(edgeData, 'cargaAtual')) {
+            Object.defineProperty(edgeData, 'cargaAtual', {
+                get() { return this.fluxo_kw_atual; },
+                set(v) { this.fluxo_kw_atual = v; },
+                configurable: true,
+                enumerable: true
+            });
+        }
+
         this.edges.set(key, edgeData);
         this.edges.set(keyRev, edgeData); // grafo não-direcionado
 
@@ -61,6 +100,45 @@ export class CityGraph {
             edge.status_ativa = false;
             console.log(`[CityGraph] Linha desativada: ${origemId} → ${destinoId}`);
         }
+    }
+
+    // Método Self-Healing: Desativa/rompe a aresta e aciona o algoritmo de busca de rota alternativa (Dijkstra)
+    romperAresta(origemId, destinoId) {
+        console.log(`\n[Self-Healing] ⚡ ROMPIMENTO DE ARESTA: ${origemId} <-> ${destinoId}`);
+        this.desativarAresta(origemId, destinoId);
+
+        const desenergizados = this.nosDesenergizados();
+        const logs = [];
+
+        if (desenergizados.length === 0) {
+            logs.push(`[Self-Healing] Aresta rompida. Todos os nós permanecem alimentados.`);
+            this.calcularFluxoArestas();
+            logs.forEach(l => console.log(l));
+            return logs;
+        }
+
+        logs.push(`[Self-Healing] Nós isolados/desconectados: ${desenergizados.join(', ')}`);
+
+        for (const nodeId of desenergizados) {
+            const rota = this.dijkstraRotaAlternativa(nodeId);
+            const node = this.nodes.get(nodeId);
+
+            if (rota) {
+                if (node) node.status_energizado = true;
+                logs.push(`[Self-Healing] ✅ Rota de contingência Dijkstra encontrada para ${nodeId}: ${rota.join(' → ')}`);
+            } else {
+                if (node) {
+                    node.status_energizado = false;
+                    node.demanda_kw_atual = 0;
+                }
+                logs.push(`[Self-Healing] 🚫 Sem rota alternativa para ${nodeId}. Nó em Blackout.`);
+            }
+        }
+
+        // Atualiza o fluxo de carga das arestas de contingência no grafo inteiro
+        this.calcularFluxoArestas();
+        logs.forEach(l => console.log(l));
+        return logs;
     }
 
     reativarAresta(origemId, destinoId) {
@@ -305,14 +383,19 @@ class BaseAgent {
 }
 
 // ── Agente 1: Horários de Pico ───────────────────────────────
+// ── Agente 1: Horários de Pico ───────────────────────────────
 export class PeakHourAgent extends BaseAgent {
     constructor() { super('PeakHourAgent', 10); }
 
-    executar(grafo, estado) {
-        const hora = estado.hora;
+    executar(grafo, estadoOuHora) {
+        const hora = typeof estadoOuHora === 'number' ? estadoOuHora : (estadoOuHora?.hora ?? 12);
         let fatores, periodo;
 
-        if (hora >= 0 && hora < 5) {
+        if (hora >= 18 && hora <= 21) {
+            // Lógica de Pico (18h-21h): Residencial 1.8x, Hospital 1.1x, Indústria 0.9x e Comercial 0.8x
+            fatores = { Residencial: 1.80, Comercial: 0.80, 'Grandes Edifícios': 0.80, Indústria: 0.90, Hospital: 1.10, Público: 0.85 };
+            periodo = 'Pico Noturno (18h-21h)';
+        } else if (hora >= 0 && hora < 5) {
             fatores = { Residencial: 0.60, Comercial: 0.60, 'Grandes Edifícios': 0.60, Indústria: 0.75, Hospital: 0.90, Público: 0.70 };
             periodo = 'Madrugada';
         } else if (hora < 8) {
@@ -321,10 +404,6 @@ export class PeakHourAgent extends BaseAgent {
         } else if (hora < 18) {
             fatores = { Residencial: 0.80, Comercial: 1.20, 'Grandes Edifícios': 1.20, Indústria: 1.15, Hospital: 1.00, Público: 1.10 };
             periodo = 'Comercial';
-        } else if (hora < 21) {
-            // Lógica de Pico (18h-21h): Residencial 1.8x, Hospital 1.1x, Indústria 0.9x e Comercial 0.8x
-            fatores = { Residencial: 1.80, Comercial: 0.80, 'Grandes Edifícios': 0.80, Indústria: 0.90, Hospital: 1.10, Público: 0.85 };
-            periodo = 'Pico Noturno';
         } else {
             fatores = { Residencial: 1.10, Comercial: 0.75, 'Grandes Edifícios': 0.75, Indústria: 0.70, Hospital: 0.95, Público: 0.80 };
             periodo = 'Noite';
@@ -336,8 +415,18 @@ export class PeakHourAgent extends BaseAgent {
             node.demanda_kw_atual = node.demanda_base_kw * fator;
         }
 
-        return [`[${this.nome}] Período: ${periodo} | Hora: ${hora}h`];
+        // Recalcula a distribuição de energia no grafo inteiro
+        grafo.calcularFluxoArestas();
+
+        const logMsg = `[PeakHourAgent] Período: ${periodo} | Hora: ${hora}h | Demanda Residencial: ${(fatores['Residencial'] * 100).toFixed(0)}%`;
+        console.log(logMsg);
+        return [logMsg];
     }
+}
+
+export function peakHourAgent(grafo, hora) {
+    const agent = new PeakHourAgent();
+    return agent.executar(grafo, hora);
 }
 
 // ── Agente 2: Geração Distribuída (Solar/Eólica) ─────────────
@@ -383,7 +472,7 @@ export class PredictiveMaintAgent extends BaseAgent {
         this.historicoSobrecarga = new Map(); // `u-v` → horas acumuladas
     }
 
-    executar(grafo, estado) {
+    executar(grafo, estado = {}) {
         grafo.calcularFluxoArestas();
         const logs = [];
         const alertas = [];
@@ -391,7 +480,6 @@ export class PredictiveMaintAgent extends BaseAgent {
         const processadas = new Set();
 
         for (const edge of grafo.edges.values()) {
-            const key = `${edge.origem}-${edge.destino}`;
             const keyNorm = [edge.origem, edge.destino].sort().join('|');
             if (processadas.has(keyNorm)) continue;
             processadas.add(keyNorm);
@@ -419,7 +507,7 @@ export class PredictiveMaintAgent extends BaseAgent {
             }
         }
 
-        estado.alertasManutencao = alertas;
+        if (estado) estado.alertasManutencao = alertas;
         return logs;
     }
 }
@@ -431,38 +519,62 @@ export class DemandResponseAgent extends BaseAgent {
         this.cortesAtivos = new Map(); // nodeId → multiplicador
     }
 
-    executar(grafo, estado) {
+    executar(grafo, estado = {}) {
         const logs = [];
 
-        // Restauração gradual (+5% por tick)
-        for (const [nodeId, mult] of this.cortesAtivos) {
-            if (mult >= 1.0) { this.cortesAtivos.delete(nodeId); continue; }
-            this.cortesAtivos.set(nodeId, Math.min(1.0, mult + 0.05));
+        // Atualiza os fluxos de carga nas arestas antes da checagem
+        grafo.calcularFluxoArestas();
+
+        // Checa se o fluxo de qualquer aresta atingiu 95% da sua capacidade máxima
+        let arestaSobrecarregada = null;
+        for (const edge of grafo.edges.values()) {
+            if (!edge.status_ativa) continue;
+            const cap = edge.capacidadeMax ?? edge.capacidade_maxima_kw;
+            const flux = edge.cargaAtual ?? edge.fluxo_kw_atual;
+            const taxa = flux / Math.max(cap, 1);
+            if (taxa >= 0.95) {
+                arestaSobrecarregada = { edge, taxa };
+                break;
+            }
         }
 
         const demanda   = grafo.demandaTotalKw();
         const capacidade = grafo.capacidadeTotalSubestacoes();
-        const temAlerta  = estado.alertasManutencao?.length > 0;
+        const temAlerta  = estado?.alertasManutencao?.length > 0;
         const cargaGlobal = demanda > capacidade * 0.90;
         const temFalha    = [...grafo.edges.values()].some(e => !e.status_ativa);
 
-        if (!temAlerta && !cargaGlobal && !temFalha) {
+        if (!arestaSobrecarregada && !temAlerta && !cargaGlobal && !temFalha) {
+            // Restauração gradual (+5% por tick)
+            for (const [nodeId, mult] of this.cortesAtivos) {
+                if (mult >= 1.0) { this.cortesAtivos.delete(nodeId); continue; }
+                this.cortesAtivos.set(nodeId, Math.min(1.0, mult + 0.05));
+            }
             this._aplicarCortes(grafo);
-            if (this.cortesAtivos.size > 0) logs.push(`[${this.nome}] Restaurando energia gradualmente (+5%/tick)`);
+            if (this.cortesAtivos.size > 0) {
+                const logRest = `[DemandResponseAgent] Restaurando energia gradualmente (+5%/tick)`;
+                logs.push(logRest);
+            }
             return logs;
         }
 
-        logs.push(`[${this.nome}] 🔴 CORTE DE EMERGÊNCIA ATIVADO: 30% Indústria | 20% Comércio | 0% Hospital`);
+        const motivo = arestaSobrecarregada
+            ? `Fluxo na linha ${arestaSobrecarregada.edge.origem}→${arestaSobrecarregada.edge.destino} atingiu ${(arestaSobrecarregada.taxa * 100).toFixed(1)}% da capacidade (>= 95%)`
+            : `Alerta de sobrecarga do sistema`;
 
-        // Corte de Emergência: 30% Indústria, 20% Comércio, 0% Hospital (prioridade 1)
+        const logAlerta = `[DemandResponseAgent] 🚨 CORTE DE EMERGÊNCIA ATIVADO: ${motivo}. Cortando 30% da demanda das Indústrias!`;
+        logs.push(logAlerta);
+        console.log(logAlerta);
+
+        // Se o fluxo bater 95%, corta a demanda da Indústria em 30%
         for (const [nodeId, node] of grafo.nodes) {
-            if (node.is_subestacao || node.prioridade === 1) continue; // Hospital (0% de corte)
+            if (node.is_subestacao || node.prioridade === 1) continue; // Hospital preservado (0% de corte)
 
             let novaMult = 1.0;
             if (node.tipo === 'Indústria') {
-                novaMult = 0.70; // 30% de corte
+                novaMult = 0.70; // Corte de 30%
             } else if (node.tipo === 'Comercial' || node.tipo === 'Grandes Edifícios') {
-                novaMult = 0.80; // 20% de corte
+                novaMult = 0.80; // Corte de 20%
             }
 
             if (novaMult < 1.0) {
@@ -472,6 +584,14 @@ export class DemandResponseAgent extends BaseAgent {
         }
 
         this._aplicarCortes(grafo);
+
+        // Recalcula o fluxo no grafo inteiro para evitar colapso
+        grafo.calcularFluxoArestas();
+
+        const logRecalc = `[DemandResponseAgent] ✅ Fluxo do grafo recalculado para evitar o colapso da rede.`;
+        logs.push(logRecalc);
+        console.log(logRecalc);
+
         return logs;
     }
 
@@ -483,6 +603,11 @@ export class DemandResponseAgent extends BaseAgent {
     }
 
     resetar() { this.cortesAtivos.clear(); }
+}
+
+export function demandResponseAgent(grafo) {
+    const agent = new DemandResponseAgent();
+    return agent.executar(grafo);
 }
 
 // ── Agente 5: Self-Healing (Autorrecuperação) ────────────────
@@ -717,3 +842,6 @@ export class CitySimulator {
         this.estado.luminosidade = base * fatorClima;
     }
 }
+
+export { CityGraph as Grafo };
+
