@@ -1973,30 +1973,42 @@ function setupUI() {
     }
 
     document.getElementById('btn-tick')?.addEventListener('click', () => {
-        citySimulator.tick(1);
+        const logs = citySimulator.tick(1);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-overload')?.addEventListener('click', () => {
-        citySimulator.alterarClima('chuvoso');
-        citySimulator.tick(2);
         simulateOverload();
+        
+        const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
+        if (noIndustria) {
+            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
+            noIndustria.demanda_kw_atual = baseDemand * 2.5;
+        }
+        
+        const logs = demandResponseAgent(citySimulator.grafo);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-night')?.addEventListener('click', () => {
         forceNight();
-        citySimulator.estado.hora = 20;
-        citySimulator.tick(0);
+        citySimulator.estado.hora = 19;
+        targetDecimalTime = 19.0;
+        
+        const logs = peakHourAgent(citySimulator.grafo, 19);
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-failure')?.addEventListener('click', () => {
-        const logs = citySimulator.simularFalha('Subestacao_Central', 'Subestacao_Norte');
         powerPlantFailure();
-        console.log('[UI] Falha injetada. Self-Healing respondeu:', logs);
+        const logs = citySimulator.simularFalha('Subestacao_Central', 'Hospital_Prontomed');
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-reset')?.addEventListener('click', () => {
         resetCity();
-        citySimulator.resetar();
+        const logs = citySimulator.resetar();
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
