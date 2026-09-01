@@ -1,11 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-<<<<<<< HEAD
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
 import { VFXManager } from './vfx.js';
-=======
-import { CitySimulator } from './smartAgents.js';
->>>>>>> bbb478f8ab9cc0f66211d828c6b8fdb649594ed4
 
 const container = document.getElementById('canvas-container');
 
@@ -299,57 +295,61 @@ function initSharedFacadeMaterials() {
             ctx.fillRect(0, 0, cw, ch);
 
             if (type === 'residential') {
-                // Casas residenciais reais: 1 ou 2 janelas por andar + porta de entrada estilizada no térreo
-                const cols = 2;
-                const rows = 2;
-                const spX = cw / cols;
-                const spY = ch / rows;
-                const ww = spX * 0.42;
-                const wh = spY * 0.45;
+                // Casas residenciais com apenas 1 ou 2 janelas por fachada + porta de entrada estilizada
+                const drawDoor = (dx, dy, dw = 40, dh = 75) => {
+                    ctx.fillStyle = doorColor;
+                    ctx.fillRect(dx, dy, dw, dh);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(dx, dy, dw, dh);
+                    // Maçaneta dourada
+                    ctx.fillStyle = '#d4af37';
+                    ctx.beginPath();
+                    ctx.arc(dx + dw * 0.78, dy + dh * 0.55, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                };
 
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        if (r === 1 && c === 0) {
-                            // Porta de madeira realista
-                            const dw = spX * 0.36;
-                            const dh = spY * 0.65;
-                            const dx = c * spX + (spX - dw) / 2;
-                            const dy = r * spY + (spY - dh);
-                            ctx.fillStyle = doorColor;
-                            ctx.fillRect(dx, dy, dw, dh);
-                            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(dx, dy, dw, dh);
-                            // Maçaneta dourada
-                            ctx.fillStyle = '#d4af37';
-                            ctx.beginPath();
-                            ctx.arc(dx + dw * 0.8, dy + dh * 0.55, 3, 0, Math.PI * 2);
-                            ctx.fill();
-                        } else {
-                            // Janela residencial bonita com moldura e vidros
-                            const wx = c * spX + (spX - ww) / 2;
-                            const wy = r * spY + (spY - wh) / 2;
-                            const isLit = (r + c + idx) % 4 === 0;
+                const drawWin = (wx, wy, ww = 52, wh = 60, windowIdx = 0) => {
+                    const isLit = (idx + windowIdx) % 3 === 0;
 
-                            // Moldura branca
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fillRect(wx - 3, wy - 3, ww + 6, wh + 6);
+                    // Moldura branca
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(wx - 3, wy - 3, ww + 6, wh + 6);
 
-                            // Vidro da janela
-                            ctx.fillStyle = isLit ? litColors[(r + c) % litColors.length] : windowColors[(r + c) % windowColors.length];
-                            ctx.fillRect(wx, wy, ww, wh);
+                    // Vidro da janela
+                    ctx.fillStyle = isLit ? litColors[(idx + windowIdx) % litColors.length] : windowColors[(idx + windowIdx) % windowColors.length];
+                    ctx.fillRect(wx, wy, ww, wh);
 
-                            // Divisor de vidro
-                            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-                            ctx.lineWidth = 1.5;
-                            ctx.beginPath();
-                            ctx.moveTo(wx + ww / 2, wy);
-                            ctx.lineTo(wx + ww / 2, wy + wh);
-                            ctx.moveTo(wx, wy + wh / 2);
-                            ctx.lineTo(wx + ww, wy + wh / 2);
-                            ctx.stroke();
-                        }
-                    }
+                    // Divisor de vidro
+                    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(wx + ww / 2, wy);
+                    ctx.lineTo(wx + ww / 2, wy + wh);
+                    ctx.moveTo(wx, wy + wh / 2);
+                    ctx.lineTo(wx + ww, wy + wh / 2);
+                    ctx.stroke();
+                };
+
+                // Alterna estilos com 1 ou 2 janelas no total dependendo do índice da paleta (idx)
+                if (idx % 4 === 0) {
+                    // Estilo 1: 1 Janela (andar superior) e 1 Porta (térreo esquerda)
+                    drawDoor(40, 160, 44, 78);
+                    drawWin(140, 50, 54, 64, 1);
+                } else if (idx % 4 === 1) {
+                    // Estilo 2: 2 Janelas (1 térreo direita, 1 andar superior centro) e 1 Porta (térreo esquerda)
+                    drawDoor(36, 160, 44, 78);
+                    drawWin(148, 168, 54, 58, 1);
+                    drawWin(96, 50, 54, 64, 2);
+                } else if (idx % 4 === 2) {
+                    // Estilo 3: 1 Janela (andar superior centro) e 1 Porta (térreo centro)
+                    drawDoor(106, 160, 44, 78);
+                    drawWin(101, 50, 54, 64, 1);
+                } else {
+                    // Estilo 4: 2 Janelas (andar superior esquerda e direita) e 1 Porta (térreo centro)
+                    drawDoor(106, 160, 44, 78);
+                    drawWin(42, 50, 50, 62, 1);
+                    drawWin(164, 50, 50, 62, 2);
                 }
             } else {
                 // Outros edifícios (escritórios, lojas, vidros, indústrias)
