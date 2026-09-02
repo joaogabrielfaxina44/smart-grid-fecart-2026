@@ -71,8 +71,20 @@ let targetYaw = yaw;
 let isGliding = false;
 let glideTargetPos = null;
 
+function resetKeys() {
+    keys.forward = false;
+    keys.backward = false;
+    keys.left = false;
+    keys.right = false;
+    keys.up = false;
+    keys.down = false;
+    isDraggingMouse = false;
+    flyVelocity.set(0, 0, 0);
+}
+
 function setCameraMode(mode) {
     cameraMode = mode;
+    resetKeys();
     const modeBtnText = document.getElementById('cam-mode-text');
     const hudPill = document.getElementById('hud-spectator');
 
@@ -100,71 +112,52 @@ function setCameraMode(mode) {
 function smoothGlideTo(pos) {
     isGliding = true;
     glideTargetPos = pos.clone();
-    flyVelocity.set(0, 0, 0);
+    resetKeys();
+}
+
+function updateKey(code, key, isPressed) {
+    const c = code || '';
+    const k = (key || '').toLowerCase();
+
+    if (c === 'KeyW' || c === 'ArrowUp' || k === 'w' || k === 'arrowup') {
+        keys.forward = isPressed;
+    } else if (c === 'KeyS' || c === 'ArrowDown' || k === 's' || k === 'arrowdown') {
+        keys.backward = isPressed;
+    } else if (c === 'KeyA' || c === 'ArrowLeft' || k === 'a' || k === 'arrowleft') {
+        keys.left = isPressed;
+    } else if (c === 'KeyD' || c === 'ArrowRight' || k === 'd' || k === 'arrowright') {
+        keys.right = isPressed;
+    } else if (c === 'Space' || c === 'KeyE' || k === ' ' || k === 'e') {
+        keys.up = isPressed;
+    } else if (c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyQ' || k === 'shift' || k === 'q') {
+        keys.down = isPressed;
+    }
 }
 
 // Listeners de Teclado
 window.addEventListener('keydown', (e) => {
     if (cameraMode !== 'fly') return;
-    switch (e.code) {
-        case 'KeyW':
-        case 'ArrowUp':
-            keys.forward = true;
-            break;
-        case 'KeyS':
-        case 'ArrowDown':
-            keys.backward = true;
-            break;
-        case 'KeyA':
-        case 'ArrowLeft':
-            keys.left = true;
-            break;
-        case 'KeyD':
-        case 'ArrowRight':
-            keys.right = true;
-            break;
-        case 'Space':
-        case 'KeyE':
-            keys.up = true;
-            e.preventDefault();
-            break;
-        case 'ShiftLeft':
-        case 'ShiftRight':
-        case 'KeyQ':
-            keys.down = true;
-            e.preventDefault();
-            break;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    updateKey(e.code, e.key, true);
+    if (['Space', 'KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+        e.preventDefault();
     }
 });
 
 window.addEventListener('keyup', (e) => {
-    switch (e.code) {
-        case 'KeyW':
-        case 'ArrowUp':
-            keys.forward = false;
-            break;
-        case 'KeyS':
-        case 'ArrowDown':
-            keys.backward = false;
-            break;
-        case 'KeyA':
-        case 'ArrowLeft':
-            keys.left = false;
-            break;
-        case 'KeyD':
-        case 'ArrowRight':
-            keys.right = false;
-            break;
-        case 'Space':
-        case 'KeyE':
-            keys.up = false;
-            break;
-        case 'ShiftLeft':
-        case 'ShiftRight':
-        case 'KeyQ':
-            keys.down = false;
-            break;
-    }
+    updateKey(e.code, e.key, false);
+});
+
+// Previne menu de contexto ao clicar com o botão direito no canvas
+renderer.domElement.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+});
+
+// Reseta o estado das teclas se a janela perder o foco (Alt+Tab, troca de aba, clique fora)
+window.addEventListener('blur', resetKeys);
+window.addEventListener('focus', resetKeys);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) resetKeys();
 });
 
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -193,13 +186,19 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => {
     isDraggingMouse = false;
 });
+window.addEventListener('pointerup', () => {
+    isDraggingMouse = false;
+});
 
 renderer.domElement.addEventListener('wheel', (e) => {
     if (cameraMode !== 'fly') return;
     const forwardDir = new THREE.Vector3();
     camera.getWorldDirection(forwardDir);
-    const impulse = e.deltaY < 0 ? 14 : -14;
+    const altitude = camera.position.y;
+    const baseSpeed = Math.max(12, 10 + Math.pow(Math.max(0, altitude) / 14, 1.2) * 4.5);
+    const impulse = e.deltaY < 0 ? 12 : -12;
     flyVelocity.addScaledVector(forwardDir, impulse);
+    flyVelocity.clampLength(0, baseSpeed * 2.0);
 }, { passive: true });
 
 // ── Geometrias, Materiais & Texturas Compartilhadas ──────────
@@ -2187,8 +2186,9 @@ function animate() {
     }
 
     if (cameraMode === 'fly') {
-        pitch = THREE.MathUtils.lerp(pitch, targetPitch, 0.2);
-        yaw = THREE.MathUtils.lerp(yaw, targetYaw, 0.2);
+        const rotFactor = 1 - Math.exp(-22 * delta);
+        pitch = THREE.MathUtils.lerp(pitch, targetPitch, rotFactor);
+        yaw = THREE.MathUtils.lerp(yaw, targetYaw, rotFactor);
 
         euler.set(pitch, yaw, 0, 'YXZ');
         camera.quaternion.setFromEuler(euler);
@@ -2218,15 +2218,16 @@ function animate() {
             if (moveDirection.lengthSq() > 0.001) {
                 moveDirection.normalize();
                 const targetVelocity = moveDirection.multiplyScalar(baseSpeed);
-                flyVelocity.lerp(targetVelocity, Math.min(1, delta * 9));
+                flyVelocity.lerp(targetVelocity, Math.min(1, delta * 10));
             } else {
-                flyVelocity.lerp(new THREE.Vector3(0, 0, 0), Math.min(1, delta * 7));
+                flyVelocity.lerp(new THREE.Vector3(0, 0, 0), Math.min(1, delta * 14));
+                if (flyVelocity.lengthSq() < 0.02) flyVelocity.set(0, 0, 0);
             }
 
             camera.position.addScaledVector(flyVelocity, delta);
 
-            if (camera.position.y < 1.4) {
-                camera.position.y = 1.4;
+            if (camera.position.y < 1.6) {
+                camera.position.y = 1.6;
                 if (flyVelocity.y < 0) flyVelocity.y = 0;
             }
 
