@@ -241,7 +241,10 @@ const materials = {
     concrete: new THREE.MeshStandardMaterial({ color: 0xa9aaa4, roughness: 0.76 }),
     industryWall: new THREE.MeshStandardMaterial({ color: 0x9c9688, roughness: 0.86 }),
     industryRoof: new THREE.MeshStandardMaterial({ color: 0x6e7778, roughness: 0.78 }),
-    solar: new THREE.MeshStandardMaterial({ color: 0x243849, roughness: 0.38, metalness: 0.18 }),
+    solar: new THREE.MeshStandardMaterial({ color: 0x1a3a5a, roughness: 0.1, metalness: 0.85 }),
+    redLight: new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 2.0 }),
+    darkConcrete: new THREE.MeshStandardMaterial({ color: 0x3d3d3d, roughness: 0.9, metalness: 0.1 }),
+    whiteTurbine: new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.2, metalness: 0.1 }),
     roadMarking: new THREE.MeshBasicMaterial({ color: 0xf2e7c9 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x73523b, roughness: 0.9 }),
     canopy: new THREE.MeshStandardMaterial({ color: 0x3f7944, roughness: 0.95 }),
@@ -564,6 +567,7 @@ const railingInstancesData = [];
 const canopyLedgeInstancesData = [];
 const canopyFrameInstancesData = [];
 const fenceInstancesData = [];
+const microSolarInstancesData = [];
 
 function addRooftopDetails(parent, x, z, w, d, h, seed) {
     const n1 = noise(seed, 0, 560);
@@ -577,6 +581,38 @@ function addRooftopDetails(parent, x, z, w, d, h, seed) {
             scaleY: 0.9
         });
     }
+    if (n2 > 0.35) {
+        acUnitInstancesData.push({
+            x: x - w * 0.15,
+            y: h + 0.22,
+            z: z + d * 0.1,
+            w: 0.9 + n2 * 0.5,
+            h: 0.45,
+            d: 0.6 + n2 * 0.35
+        });
+    }
+    if (noise(seed, 2, 562) > 0.6) {
+        antennaInstancesData.push({
+            x: x + w * 0.25,
+            y: h + 0.7,
+            z: z + d * 0.22,
+            w: 0.06,
+            h: 1.4,
+            d: 0.06
+        });
+    }
+    if (noise(seed, 3, 563) > 0.45) { // Microgeração distribuída sutil
+        microSolarInstancesData.push({
+            x: x,
+            y: h + 0.1,
+            z: z + d * 0.2,
+            w: Math.min(w * 0.4, 2.5),
+            h: 0.05,
+            d: Math.min(d * 0.4, 1.5),
+            rotX: 0.35 // Inclinado para o sol
+        });
+    }
+}
     if (n2 > 0.35) {
         acUnitInstancesData.push({
             x: x - w * 0.15,
@@ -637,8 +673,8 @@ function buildInstancedRooftopsAndDetails() {
 
         dataList.forEach((item, index) => {
             dummy.position.set(item.x, item.y, item.z);
-            scaleFn(dummy, item);
             dummy.rotation.set(0, 0, 0);
+            scaleFn(dummy, item);
             dummy.updateMatrix();
             imesh.setMatrixAt(index, dummy.matrix);
         });
@@ -658,10 +694,11 @@ function buildInstancedRooftopsAndDetails() {
 
     createBatch(unitBoxGeometry, detailMats.antenna, antennaInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
-    }, false, false);
+    }, false, true);
 
-    createBatch(unitBoxGeometry, detailMats.balcony, balconyInstancesData, (d, item) => {
+    createBatch(unitBoxGeometry, materials.solar, microSolarInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
+        if (item.rotX) d.rotation.set(item.rotX, 0, 0);
     }, false, true);
 
     createBatch(unitBoxGeometry, detailMats.railing, railingInstancesData, (d, item) => {
@@ -786,9 +823,9 @@ function addRoadMarking(width, depth, x, z) {
 }
 
 function getBlockType(row, col) {
-    if (row === GRID_SIZE - 2 && col === GRID_SIZE - 2) return 'power_plant';
-    if (row === 1 && col === 1) return 'solar_farm';
-    if (row === GRID_SIZE - 2 && col === 1) return 'wind_farm';
+    if (row === GRID_SIZE - 1 && col === GRID_SIZE - 1) return 'power_plant';
+    if (row === 0 && col === 0) return 'solar_farm';
+    if (row === GRID_SIZE - 1 && col === 0) return 'wind_farm';
     if (row === 3 && col === 3) return 'substation';
     if (row === GRID_SIZE - 4 && col === GRID_SIZE - 4) return 'substation';
 
@@ -816,6 +853,7 @@ const backendNodePositions = {};
 function getBlockBackendId(row, col, type) {
     if (type === 'power_plant') return 'Subestacao_Central';
     if (type === 'solar_farm') return 'Fazenda_Solar';
+    if (type === 'wind_farm') return 'Fazenda_Eolica';
     if (type === 'hospital') {
         if (row === GRID_RADIUS - 3 && col === GRID_RADIUS - 1) return 'Hospital_Prontomed';
     }
@@ -1154,32 +1192,41 @@ function createPowerPlant(block) {
     group.matrixAutoUpdate = false;
     cityGroup.add(group);
     
-    addBox({ width: 14, height: 8, depth: 10, x: block.x, y: 4, z: block.z - 2, material: materials.industryWall, parent: group, cast: true, receive: true });
+    // Prédio Principal em concreto escuro
+    addBox({ width: 14, height: 8, depth: 10, x: block.x, y: 4, z: block.z - 2, material: materials.darkConcrete, parent: group, cast: true, receive: true });
     addBox({ width: 14.5, height: 0.5, depth: 10.5, x: block.x, y: 8.25, z: block.z - 2, material: materials.industryRoof, parent: group, cast: true, receive: true });
 
+    // Chaminés detalhadas com luzes vermelhas de balizamento
     const stackGeo = new THREE.CylinderGeometry(0.8, 1.2, 20, 12);
     for (let i=0; i<3; i++) {
-        const stack = new THREE.Mesh(stackGeo, materials.concrete);
+        const stack = new THREE.Mesh(stackGeo, materials.darkConcrete);
         stack.position.set(block.x - 4 + i*4, 10, block.z + 5);
         stack.castShadow = true;
         stack.matrixAutoUpdate = false;
         stack.updateMatrix();
         group.add(stack);
+        
+        // Luz vermelha no topo
+        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: block.x - 4 + i*4, y: 20.2, z: block.z + 5, material: materials.redLight, parent: group, cast: false, receive: false });
     }
 
+    // Torres de Resfriamento usando LatheGeometry
     const points = [];
     for ( let i = 0; i <= 10; i ++ ) {
-        const y = i * 1.5;
-        const x = 3 - Math.sin( i * 0.15 ) * 1.0;
+        const y = i * 2.0;
+        const x = 3.5 - Math.sin( i * 0.15 ) * 1.5;
         points.push( new THREE.Vector2( x, y ) );
     }
     const coolingTowerGeo = new THREE.LatheGeometry(points, 16);
-    const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.concrete);
+    const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.darkConcrete);
     coolingTower.position.set(block.x + 6, 0, block.z + 5);
     coolingTower.castShadow = true;
     coolingTower.matrixAutoUpdate = false;
     coolingTower.updateMatrix();
     group.add(coolingTower);
+    
+    // Luz de balizamento na torre de resfriamento
+    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: block.x + 6, y: 20.2, z: block.z + 5, material: materials.redLight, parent: group, cast: false, receive: false });
 
     addPerimeterFence(group, block.x, block.z);
 }
@@ -1198,11 +1245,12 @@ function createSolarFarm(block) {
     
     const dummy = new THREE.Object3D();
     let i = 0;
+    // Fileiras precisas e alinhadas
     for (let r=0; r<8; r++) {
         for (let c=0; c<8; c++) {
             dummy.position.set(block.x - 7 + c*2.0, 0.8, block.z - 7 + r*2.0);
             dummy.scale.set(1.8, 0.1, 1.2);
-            dummy.rotation.set(0.5, 0, 0);
+            dummy.rotation.set(0.5, 0, 0); // Inclinado para o sol
             dummy.updateMatrix();
             imesh.setMatrixAt(i++, dummy.matrix);
         }
@@ -1243,22 +1291,30 @@ function createWindFarm(block) {
         const x = block.x - 5 + (i%2)*10;
         const z = block.z - 5 + Math.floor(i/2)*10;
         
-        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 25, 8), materials.concrete);
-        tower.position.set(x, 12.5, z);
+        // Torres altas, brancas e elegantes
+        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.5, 35, 12), materials.whiteTurbine);
+        tower.position.set(x, 17.5, z);
         tower.castShadow = true;
         tower.matrixAutoUpdate = false;
         tower.updateMatrix();
         group.add(tower);
 
-        addBox({ width: 1.5, height: 1.5, depth: 3, x: x, y: 25, z: z, material: materials.concrete, parent: group, cast: true, receive: true });
+        const nacelle = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
+        nacelle.scale.set(1.2, 1.2, 3);
+        nacelle.position.set(x, 35, z);
+        nacelle.castShadow = true;
+        nacelle.matrixAutoUpdate = false;
+        nacelle.updateMatrix();
+        group.add(nacelle);
 
         const rotor = new THREE.Group();
-        rotor.position.set(x, 25, z + 1.6);
+        rotor.position.set(x, 35, z + 1.6);
         
+        // Pás finas e elegantes
         for (let b=0; b<3; b++) {
-            const blade = new THREE.Mesh(unitBoxGeometry, materials.concrete);
-            blade.scale.set(0.2, 10, 0.4);
-            blade.position.set(0, 5, 0);
+            const blade = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
+            blade.scale.set(0.1, 14, 0.3); // Pás maiores e mais finas
+            blade.position.set(0, 7, 0);
             blade.matrixAutoUpdate = false;
             blade.updateMatrix();
             
