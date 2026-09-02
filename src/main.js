@@ -134,7 +134,7 @@ function updateKey(code, key, isPressed) {
     }
 }
 
-// Listeners de Teclado
+// Listeners de Teclado no modo capture para nunca perder soltura de teclas
 window.addEventListener('keydown', (e) => {
     if (cameraMode !== 'fly') return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -142,16 +142,19 @@ window.addEventListener('keydown', (e) => {
     if (['Space', 'KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
         e.preventDefault();
     }
-});
+}, { capture: true });
 
 window.addEventListener('keyup', (e) => {
     updateKey(e.code, e.key, false);
-});
+}, { capture: true });
 
-// Previne menu de contexto ao clicar com o botão direito no canvas
-renderer.domElement.addEventListener('contextmenu', (e) => {
+// Previne globalmente menu de contexto do botão direito em toda a página
+window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-});
+}, { capture: true });
+document.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+}, { capture: true });
 
 // Reseta o estado das teclas se a janela perder o foco (Alt+Tab, troca de aba, clique fora)
 window.addEventListener('blur', resetKeys);
@@ -160,8 +163,13 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) resetKeys();
 });
 
-renderer.domElement.addEventListener('mousedown', (e) => {
+// Controle de Rotação por Mouse / Pointer
+window.addEventListener('mousedown', (e) => {
+    if (cameraMode !== 'fly') return;
+    if (e.target && e.target.closest('#control-panel, #toggle-panel-btn')) return;
+
     if (e.button === 0 || e.button === 2) {
+        if (e.button === 2) e.preventDefault();
         isDraggingMouse = true;
         previousMousePos = { x: e.clientX, y: e.clientY };
         mouseMovedDistance = 0;
@@ -170,6 +178,10 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mousemove', (e) => {
     if (!isDraggingMouse || cameraMode !== 'fly') return;
+    if (e.buttons === 0) {
+        isDraggingMouse = false;
+        return;
+    }
 
     const deltaX = e.clientX - previousMousePos.x;
     const deltaY = e.clientY - previousMousePos.y;
@@ -187,6 +199,9 @@ window.addEventListener('mouseup', () => {
     isDraggingMouse = false;
 });
 window.addEventListener('pointerup', () => {
+    isDraggingMouse = false;
+});
+window.addEventListener('pointercancel', () => {
     isDraggingMouse = false;
 });
 

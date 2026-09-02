@@ -13,6 +13,8 @@ body {
     background: #bfd3e6;
     color: #1c2428;
     font-family: Inter, Arial, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 #canvas-container {
