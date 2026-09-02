@@ -383,7 +383,6 @@ class BaseAgent {
 }
 
 // ── Agente 1: Horários de Pico ───────────────────────────────
-// ── Agente 1: Horários de Pico ───────────────────────────────
 export class PeakHourAgent extends BaseAgent {
     constructor() { super('PeakHourAgent', 10); }
 

@@ -84,7 +84,10 @@ body {
     border-radius: 16px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
     color: #e0e5e9;
-    overflow: hidden;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
     transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
     transform-origin: top right;
 }
@@ -284,5 +287,30 @@ body {
     .hud-pill {
         display: none;
     }
+}
+
+.hud-item strong {
+    color: #00d2ff;
+}
+
+#xray-tooltip {
+    background: rgba(10, 15, 25, 0.95);
+    border: 1px solid #00d2ff;
+    box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+#xray-tooltip #tooltip-title {
+    color: #ffffff;
+    font-size: 14px;
+}
+
+#xray-tooltip #tooltip-desc {
+    white-space: pre-line;
+    color: #b0c4de;
 }
 

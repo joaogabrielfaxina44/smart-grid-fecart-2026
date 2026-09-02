@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
-import { VFXManager } from './vfx.js';
 
 const container = document.getElementById('canvas-container');
 
@@ -264,6 +263,7 @@ const powerMats = {
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
     wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }),
     wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }),
+    wireCritical: new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, linewidth: 2.5 }),
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
 };
 
@@ -1448,7 +1448,6 @@ function createTrafficHints() {
 // ── Smart Grid Infrastructure ───────────────────────────────
 
 const powerGridObjects = [];
-let powerState = 'normal';
 
 // Geometrias precisas e realistas para postes da rede elétrica & iluminação pública
 const poleShaftGeo = new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8);
@@ -1826,141 +1825,7 @@ function triggerBlackout(targetGroup) {
     });
 }
 
-function simulateOverload() {
-    powerState = 'overload';
-    powerGridObjects.forEach(group => {
-        if (group.userData.active) setWireMaterial(group, 'overloadMat');
-    });
-}
-
 let sceneLightState = 'day';
-let originalHemiColor, originalHemiGround, originalSunIntensity;
-
-function forceNight() {
-    if (!originalHemiColor) {
-        const hemi = scene.children.find(c => c.isHemisphereLight);
-        const sun = scene.children.find(c => c.isDirectionalLight);
-        if (hemi && sun) {
-            originalHemiColor = hemi.color.clone();
-            originalHemiGround = hemi.groundColor.clone();
-            originalSunIntensity = sun.intensity;
-        }
-    }
-
-    sceneLightState = 'night';
-    const hemi = scene.children.find(c => c.isHemisphereLight);
-    const sun = scene.children.find(c => c.isDirectionalLight);
-
-    if (hemi) {
-        hemi.color.setHex(0x1a2a40);
-        hemi.groundColor.setHex(0x0a101a);
-        hemi.intensity = 0.5;
-    }
-    if (sun) {
-        sun.intensity = 0.05;
-        sun.color.setHex(0x6b80a6);
-    }
-
-    scene.background.setHex(0x0a1020);
-    scene.fog.color.setHex(0x0a1020);
-
-    powerGridObjects.forEach(group => {
-        if (group.userData.active) {
-            group.traverse(child => {
-                if (child.name === "streetLampBulb" && child.material) {
-                    child.material.emissive.setHex(0xffaa22);
-                }
-            });
-        }
-    });
-
-    cityGroup.traverse(child => {
-        if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => {
-                if (mat && mat.map && mat.emissive) {
-                    mat.emissive.setHex(0x555544);
-                    mat.emissiveIntensity = 1.0;
-                }
-            });
-        }
-    });
-}
-
-function powerPlantFailure() {
-    powerState = 'blackout';
-    let delay = 0;
-
-    const sorted = [...powerGridObjects].sort((a, b) => {
-        const d1 = Math.hypot(a.userData.row - GRID_RADIUS, a.userData.col - GRID_RADIUS);
-        const d2 = Math.hypot(b.userData.row - GRID_RADIUS, b.userData.col - GRID_RADIUS);
-        return d1 - d2;
-    });
-
-    sorted.forEach(group => {
-        setTimeout(() => {
-            triggerBlackout(group);
-            if (sceneLightState === 'night') {
-                cityGroup.children.forEach(c => {
-                    if (c.name.includes(`${group.userData.row * GRID_SIZE + group.userData.col}`)) {
-                        c.traverse(mesh => {
-                            if (mesh.isMesh && mesh.material) {
-                                const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-                                mats.forEach(mat => {
-                                    if (mat && mat.map && mat.emissive) {
-                                        mat.emissive.setHex(0x000000);
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            }
-        }, delay);
-        delay += 30 + Math.random() * 40;
-    });
-}
-
-function resetCity() {
-    powerState = 'normal';
-    powerGridObjects.forEach(group => {
-        group.userData.active = true;
-        setWireMaterial(group, 'originalMat');
-        group.traverse(child => {
-            if (child.name === "streetLampBulb" && child.material) {
-                child.material.emissive.setHex(0x000000);
-            }
-        });
-    });
-
-    if (sceneLightState === 'night') {
-        sceneLightState = 'day';
-        const hemi = scene.children.find(c => c.isHemisphereLight);
-        const sun = scene.children.find(c => c.isDirectionalLight);
-
-        if (hemi && originalHemiColor) {
-            hemi.color.copy(originalHemiColor);
-            hemi.groundColor.copy(originalHemiGround);
-            hemi.intensity = 1.68;
-        }
-        if (sun && originalSunIntensity !== undefined) {
-            sun.intensity = originalSunIntensity;
-            sun.color.setHex(0xfff3d7);
-        }
-    }
-
-    cityGroup.traverse(child => {
-        if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => {
-                if (mat && mat.map && mat.emissive) {
-                    mat.emissive.setHex(0x000000);
-                    mat.emissiveIntensity = 1;
-                }
-            });
-        }
-    });
-}
 
 function setupUI() {
     const toggleBtn = document.getElementById('toggle-panel-btn');
@@ -1972,45 +1837,82 @@ function setupUI() {
         });
     }
 
-    document.getElementById('btn-tick')?.addEventListener('click', () => {
-        const logs = citySimulator.tick(1);
+    // 0. Botão: Pausar / Destravar Tempo (Play/Pause)
+    const btnToggleTime = document.getElementById('btn-toggle-time');
+    const iconPause = document.getElementById('icon-time-pause');
+    const iconPlay = document.getElementById('icon-time-play');
+    const textTimeToggle = document.getElementById('time-toggle-text');
+
+    btnToggleTime?.addEventListener('click', () => {
+        isTimeRunning = !isTimeRunning;
+        if (isTimeRunning) {
+            btnToggleTime.className = 'control-btn success';
+            if (iconPause) iconPause.style.display = 'block';
+            if (iconPlay) iconPlay.style.display = 'none';
+            if (textTimeToggle) textTimeToggle.textContent = 'Pausar Tempo (Travar)';
+            console.log('[Simulador] Tempo destravado (avanço contínuo ativo).');
+        } else {
+            btnToggleTime.className = 'control-btn warning';
+            if (iconPause) iconPause.style.display = 'none';
+            if (iconPlay) iconPlay.style.display = 'block';
+            if (textTimeToggle) textTimeToggle.textContent = 'Destravar Tempo (Rodar)';
+            console.log('[Simulador] Tempo travado / pausado.');
+        }
+    });
+
+    // 1. Botão: Avançar 1 Hora (+1h)
+    document.getElementById('btn-avancar-hora')?.addEventListener('click', () => {
+        const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
+        targetDecimalTime = proximaHora;
+        currentDecimalTime = proximaHora;
+        lastCheckedHour = proximaHora;
+        if (citySimulator?.estado) citySimulator.estado.hora = proximaHora;
+        console.log(`[Painel] Botão Avançar Hora clicado (${proximaHora}:00).`);
+        const logs = peakHourAgent(citySimulator.grafo, proximaHora);
         syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
-    document.getElementById('btn-overload')?.addEventListener('click', () => {
-        simulateOverload();
-        
+    // 2. Botão: Simular Sobrecarga
+    document.getElementById('btn-sobrecarga')?.addEventListener('click', () => {
         const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
         if (noIndustria) {
             const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
             noIndustria.demanda_kw_atual = baseDemand * 2.5;
+            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
         }
-        
         const logs = demandResponseAgent(citySimulator.grafo);
         syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
-    document.getElementById('btn-night')?.addEventListener('click', () => {
-        forceNight();
-        citySimulator.estado.hora = 19;
-        targetDecimalTime = 19.0;
-        
-        const logs = peakHourAgent(citySimulator.grafo, 19);
+    // 3. Botão: Forçar Noite / Clima (20h)
+    document.getElementById('btn-forcar-noite')?.addEventListener('click', () => {
+        targetDecimalTime = 20.0;
+        currentDecimalTime = 20.0;
+        lastCheckedHour = 20;
+        if (citySimulator?.estado) citySimulator.estado.hora = 20;
+        console.log('[Painel] Botão Forçar Noite clicado (20:00).');
+        const logs = peakHourAgent(citySimulator.grafo, 20);
         syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
-    document.getElementById('btn-failure')?.addEventListener('click', () => {
-        powerPlantFailure();
-        const logs = citySimulator.simularFalha('Subestacao_Central', 'Hospital_Prontomed');
+    // 4. Botão: Falha na Usina (Blackout / Self-Healing)
+    document.getElementById('btn-falha-usina')?.addEventListener('click', () => {
+        console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
+        const logs = citySimulator.grafo.romperAresta('Subestacao_Central', 'Hospital_Prontomed');
         syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
+    // 5. Botão: Resetar Cidade
     document.getElementById('btn-reset')?.addEventListener('click', () => {
-        resetCity();
+        console.log('[Painel] Resetando cidade...');
+        targetDecimalTime = 7.0;
+        currentDecimalTime = 7.0;
+        lastCheckedHour = 7;
         const logs = citySimulator.resetar();
         syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
+    // 6. Controles de Câmera
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
         setCameraMode(cameraMode === 'fly' ? 'orbit' : 'fly');
     });
@@ -2241,6 +2143,12 @@ function syncSceneWithBackend(grafo, estado, logs) {
     if (hudClima)   hudClima.textContent   = estado.clima;
 }
 
+function atualizarPainelHUD() {
+    if (typeof syncSceneWithBackend === 'function' && typeof citySimulator !== 'undefined') {
+        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, []);
+    }
+}
+
 // ── Instanciação do Simulador ─────────────────────────────────
 const citySimulator = new CitySimulator({ onSync: syncSceneWithBackend });
 const grafo = citySimulator.grafo;
@@ -2273,6 +2181,9 @@ function animate() {
 
     if (powerMats.wireOverload) {
         powerMats.wireOverload.opacity = 0.65 + Math.sin(now * 0.007) * 0.3;
+    }
+    if (powerMats.wireCritical) {
+        powerMats.wireCritical.opacity = 0.65 + Math.sin(now * 0.012) * 0.3;
     }
 
     if (cameraMode === 'fly') {
@@ -2338,7 +2249,7 @@ function animate() {
     const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
     if (transLinesGroup) {
         transLinesGroup.children.forEach(linha => {
-            if (linha.isLine && linha.material.isLineDashedMaterial && !linha.userData.broken) {
+            if (linha.isLine && linha.material?.isLineDashedMaterial && !linha.userData.broken) {
                 const speed = linha.userData.currentSpeed || 5.0;
                 linha.material.dashOffset -= delta * speed;
             }
@@ -2382,6 +2293,7 @@ function updateSmoothDayNightCycle(delta) {
     }
 
     const h = (currentDecimalTime % 24 + 24) % 24;
+    sceneLightState = (h >= 18 || h < 6) ? 'night' : 'day';
 
     // Atualiza HUD com minutos contínuos (formato HH:MM)
     const hInt = Math.floor(h);
@@ -2527,97 +2439,6 @@ function handleResize() {
 
 window.addEventListener('resize', handleResize);
 animate();
-
-// ═══════════════════════════════════════════════════════════════
-// CONEXÃO DOS BOTÕES DO PAINEL AO MOTOR LÓGICO (smartAgents.js)
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Função genérica para engatilhar a atualização visual e sincronizar o HUD
- */
-function atualizarPainelHUD() {
-    if (typeof syncSceneWithBackend === 'function') {
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, []);
-    }
-    console.log('[HUD] Painel HUD atualizado.');
-}
-
-// 0. Botão: Travar / Destravar Tempo (Play/Pause)
-const btnToggleTime = document.getElementById('btn-toggle-time');
-const iconPause = document.getElementById('icon-time-pause');
-const iconPlay = document.getElementById('icon-time-play');
-const textTimeToggle = document.getElementById('time-toggle-text');
-
-if (btnToggleTime) {
-    btnToggleTime.addEventListener('click', () => {
-        isTimeRunning = !isTimeRunning;
-        if (isTimeRunning) {
-            btnToggleTime.className = 'control-btn success';
-            if (iconPause) iconPause.style.display = 'block';
-            if (iconPlay) iconPlay.style.display = 'none';
-            if (textTimeToggle) textTimeToggle.textContent = 'Pausar Tempo (Travar)';
-            console.log('[Simulador] Tempo destravado (avanço contínuo em minutos ativo).');
-        } else {
-            btnToggleTime.className = 'control-btn warning';
-            if (iconPause) iconPause.style.display = 'none';
-            if (iconPlay) iconPlay.style.display = 'block';
-            if (textTimeToggle) textTimeToggle.textContent = 'Destravar Tempo (Rodar)';
-            console.log('[Simulador] Tempo travado / pausado.');
-        }
-    });
-}
-
-// 1. Botão: Forçar Pico Noturno (20h)
-const btnForcarNoite = document.getElementById('btn-forcar-noite');
-if (btnForcarNoite) {
-    btnForcarNoite.addEventListener('click', () => {
-        targetDecimalTime = 20.0;
-        currentDecimalTime = 20.0;
-        if (citySimulator.estado) citySimulator.estado.hora = 20;
-        console.log('[Painel] Botão Forçar Pico Noturno clicado (20:00).');
-        peakHourAgent(grafo, 20);
-        atualizarPainelHUD();
-    });
-}
-
-// 2. Botão: Avançar Hora (+1h)
-const btnAvancarHora = document.getElementById('btn-avancar-hora');
-if (btnAvancarHora) {
-    btnAvancarHora.addEventListener('click', () => {
-        const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
-        targetDecimalTime = proximaHora;
-        currentDecimalTime = proximaHora;
-        if (citySimulator.estado) citySimulator.estado.hora = proximaHora;
-        console.log(`[Painel] Botão Avançar Hora clicado. Hora ajustada para ${proximaHora}:00.`);
-        peakHourAgent(grafo, proximaHora);
-        atualizarPainelHUD();
-    });
-}
-
-// 3. Botão: Sobrecarga Industrial
-const btnSobrecarga = document.getElementById('btn-sobrecarga');
-if (btnSobrecarga) {
-    btnSobrecarga.addEventListener('click', () => {
-        const noIndustria = grafo.nodes.get('Zona_Industrial_A');
-        if (noIndustria) {
-            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
-            noIndustria.demanda_kw_atual = baseDemand * 2.5;
-            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
-        }
-        demandResponseAgent(grafo);
-        atualizarPainelHUD();
-    });
-}
-
-// 4. Botão: Falha na Usina (Rompimento de Aresta / Self-Healing)
-const btnFalhaUsina = document.getElementById('btn-falha-usina');
-if (btnFalhaUsina) {
-    btnFalhaUsina.addEventListener('click', () => {
-        console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
-        grafo.romperAresta('Subestacao_Central', 'Hospital_Prontomed');
-        atualizarPainelHUD();
-    });
-}
 
 window.camera = camera;
 
