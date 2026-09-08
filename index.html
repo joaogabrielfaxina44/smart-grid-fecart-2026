@@ -25,6 +25,14 @@
             
             <div class="panel-content">
                 <div class="control-group">
+                    <h3>Apresentação Fecart</h3>
+                    <button id="btn-iniciar-tour" class="control-btn primary" style="background: linear-gradient(45deg, #1d4ed8, #60a5fa);">
+                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <strong>Iniciar Tour (Modo Guiado)</strong>
+                    </button>
+                </div>
+
+                <div class="control-group">
                     <h3>Simulação de Rede</h3>
                     <button id="btn-toggle-time" class="control-btn success">
                         <svg id="icon-time-pause" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
@@ -114,6 +122,10 @@
             <div class="hud-item">⚡ <strong id="hud-sim-demanda">— kW</strong></div>
             <div class="hud-divider"></div>
             <div class="hud-item">🌤️ <strong id="hud-sim-clima">ensolarado</strong></div>
+        </div>
+        
+        <!-- Alerts HUD -->
+        <div id="hud-alert-container" style="position: absolute; top: 60px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; z-index: 100;">
         </div>
         
         <!-- X-Ray Tooltip -->

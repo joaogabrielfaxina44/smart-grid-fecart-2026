@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
+import { VFXManager } from './vfx.js';
+import { StorytellingTour } from './storytelling.js';
 
 const container = document.getElementById('canvas-container');
 
@@ -12,6 +14,7 @@ let isTimeRunning = true; // Simulação de tempo contínua ativa por padrão
 let timeSpeed = 0.08; // 1 hora virtual a cada ~12.5s (minutos avançam continuamente e de forma fluida)
 
 const scene = new THREE.Scene();
+const vfxManager = new VFXManager(scene);
 const skyColorDay = new THREE.Color(0xbfd3e6);
 scene.background = skyColorDay.clone();
 scene.fog = new THREE.Fog(0xbfd3e6, 320, 860);
@@ -109,7 +112,12 @@ function setCameraMode(mode) {
     }
 }
 
-function smoothGlideTo(pos) {
+window.smoothGlideTo = function(pos) {
+    const p = new THREE.Vector3(pos.x, pos.y, pos.z);
+    smoothGlideToImpl(p);
+};
+
+function smoothGlideToImpl(pos) {
     isGliding = true;
     glideTargetPos = pos.clone();
     resetKeys();
@@ -1922,10 +1930,11 @@ function setupUI() {
         targetDecimalTime = proximaHora;
         currentDecimalTime = proximaHora;
         lastCheckedHour = proximaHora;
-        if (citySimulator?.estado) citySimulator.estado.hora = proximaHora;
+        if (citySimulator?.estado) {
+            citySimulator.estado.hora = proximaHora;
+            citySimulator.tick(0);
+        }
         console.log(`[Painel] Botão Avançar Hora clicado (${proximaHora}:00).`);
-        const logs = peakHourAgent(citySimulator.grafo, proximaHora);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     // 2. Botão: Simular Sobrecarga
@@ -1936,8 +1945,7 @@ function setupUI() {
             noIndustria.demanda_kw_atual = baseDemand * 2.5;
             console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
         }
-        const logs = demandResponseAgent(citySimulator.grafo);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
+        if (citySimulator) citySimulator.tick(0);
     });
 
     // 3. Botão: Forçar Noite / Clima (20h)
@@ -1945,17 +1953,17 @@ function setupUI() {
         targetDecimalTime = 20.0;
         currentDecimalTime = 20.0;
         lastCheckedHour = 20;
-        if (citySimulator?.estado) citySimulator.estado.hora = 20;
+        if (citySimulator?.estado) {
+            citySimulator.estado.hora = 20;
+            citySimulator.tick(0);
+        }
         console.log('[Painel] Botão Forçar Noite clicado (20:00).');
-        const logs = peakHourAgent(citySimulator.grafo, 20);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
     });
 
     // 4. Botão: Falha na Usina (Blackout / Self-Healing)
     document.getElementById('btn-falha-usina')?.addEventListener('click', () => {
         console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
-        const logs = citySimulator.grafo.romperAresta('Subestacao_Central', 'Hospital_Prontomed');
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
+        if (citySimulator) citySimulator.simularFalha('Subestacao_Central', 'Hospital_Prontomed');
     });
 
     // 5. Botão: Resetar Cidade
@@ -1964,11 +1972,18 @@ function setupUI() {
         targetDecimalTime = 7.0;
         currentDecimalTime = 7.0;
         lastCheckedHour = 7;
-        const logs = citySimulator.resetar();
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
+        if (citySimulator) citySimulator.resetar();
     });
 
-    // 6. Controles de Câmera
+    // 6. Tour Guiada
+    const hudAlertContainer = document.getElementById('hud-alert-container');
+    const tour = new StorytellingTour(camera, citySimulator, hudAlertContainer);
+    document.getElementById('btn-iniciar-tour')?.addEventListener('click', () => {
+        tour.start();
+        setCameraMode('fly'); // Garante que a câmera aceita Glide
+    });
+
+    // 7. Controles de Câmera
     document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
         setCameraMode(cameraMode === 'fly' ? 'orbit' : 'fly');
     });
@@ -1977,14 +1992,14 @@ function setupUI() {
         if (cameraMode !== 'fly') setCameraMode('fly');
         targetPitch = 0.04;
         targetYaw = 0;
-        smoothGlideTo(defaultStreetPos);
+        smoothGlideToImpl(defaultStreetPos);
     });
 
     document.getElementById('btn-aerial-view')?.addEventListener('click', () => {
         if (cameraMode !== 'fly') setCameraMode('fly');
         targetPitch = -0.58;
         targetYaw = -0.68;
-        smoothGlideTo(defaultAerialPos);
+        smoothGlideToImpl(defaultAerialPos);
     });
 }
 
@@ -2132,6 +2147,14 @@ function syncSceneWithBackend(grafo, estado, logs) {
                     child.material.emissive?.setHex(0x000000);
                 } else if (sceneLightState === 'night') {
                     child.material.emissive?.setHex(0xffaa22);
+                    // Dim streetlamps if it's late night
+                    if (estado.hora >= 0 && estado.hora <= 5) {
+                         child.material.emissiveIntensity = 0.5; // Iluminação inteligente atuando
+                    } else {
+                         child.material.emissiveIntensity = 4.2;
+                    }
+                } else {
+                    child.material.emissive?.setHex(0x000000);
                 }
                 return;
             }
@@ -2142,15 +2165,24 @@ function syncSceneWithBackend(grafo, estado, logs) {
             mats.forEach(mat => {
                 if (!mat) return;
 
+                const baseDemanda = node.demanda_base_kw || node.demandaBase || 1;
+                const demandaAtual = node.demanda_kw_atual;
+                const isCortado = (demandaAtual < baseDemanda) && node.tipo !== 'Residencial' && node.tipo !== 'Geração' && node.prioridade !== 1;
+                const isHospital = node.prioridade === 1;
+
                 if (!node.status_energizado) {
                     if (mat.emissive) mat.emissive.setHex(0x000000);
                     if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0;
+                } else if (isCortado) {
+                    if (mat.emissive) mat.emissive.setHex(0x440000); // Red glow for cut demand
+                    if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 1.0;
                 } else {
                     if (sceneLightState === 'night' && mat.map && mat.emissive) {
-                        mat.emissive.setHex(0x555544);
-                        mat.emissiveIntensity = 1.0;
+                        mat.emissive.setHex(isHospital ? 0x44aaff : 0x555544); // Hospital glows blue
+                        mat.emissiveIntensity = isHospital ? 2.0 : 1.0;
                     } else if (sceneLightState === 'day' && mat.emissive) {
-                        mat.emissive.setHex(0x000000);
+                        mat.emissive.setHex(isHospital ? 0x2255ff : 0x000000); // Hospital has a slight blue shield
+                        mat.emissiveIntensity = isHospital ? 0.5 : 0;
                     }
                 }
             });
@@ -2172,6 +2204,14 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
             if (!edge.status_ativa) {
                 linha.material = powerMats.wireBlackout;
+                if (!linha.userData.broken) {
+                    // Just broke! Create sparks at the middle of the line
+                    linha.geometry.computeBoundingBox();
+                    const center = new THREE.Vector3();
+                    linha.geometry.boundingBox.getCenter(center);
+                    center.applyMatrix4(linha.matrixWorld);
+                    if (typeof vfxManager !== 'undefined') vfxManager.createSparks(center);
+                }
                 linha.userData.broken = true;
             } else if (taxaCarga >= 0.95) {
                 linha.material = powerMats.wireCritical; // Vermelho
@@ -2192,11 +2232,39 @@ function syncSceneWithBackend(grafo, estado, logs) {
     // ── 3. Atualizar HUD com dados da simulação ──────────────
     const hudDemanda = document.getElementById('hud-sim-demanda');
     const hudClima = document.getElementById('hud-sim-clima');
+    const hudAlert = document.getElementById('hud-alert-container');
     if (estado && estado.hora !== undefined) {
         targetDecimalTime = estado.hora;
     }
     if (hudDemanda) hudDemanda.textContent = `${grafo.demandaTotalKw().toFixed(0)} kW`;
     if (hudClima)   hudClima.textContent   = estado.clima;
+    
+    // Processar logs para exibição no HUD
+    if (hudAlert && logs && logs.length > 0) {
+        logs.forEach(log => {
+            if (log.includes('Pico Noturno') || log.includes('CORTE DE EMERGÊNCIA') || log.includes('SUPERAQUECIMENTO') || log.includes('Blackout') || log.includes('Romper')) {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'hud-pill';
+                alertDiv.style.backgroundColor = 'rgba(200, 30, 30, 0.85)';
+                alertDiv.style.color = '#fff';
+                alertDiv.style.pointerEvents = 'none';
+                
+                let icon = '⚠️';
+                if (log.includes('Pico Noturno')) icon = '🌙';
+                if (log.includes('CORTE DE EMERGÊNCIA')) icon = '⚡';
+                if (log.includes('SUPERAQUECIMENTO')) icon = '🔥';
+                if (log.includes('Blackout')) icon = '🔌';
+                
+                alertDiv.innerHTML = `<div class="hud-item">${icon} <strong>${log}</strong></div>`;
+                hudAlert.appendChild(alertDiv);
+                
+                // Remove após 8 segundos
+                setTimeout(() => {
+                    if (hudAlert.contains(alertDiv)) hudAlert.removeChild(alertDiv);
+                }, 8000);
+            }
+        });
+    }
 }
 
 function atualizarPainelHUD() {
@@ -2317,6 +2385,7 @@ function animate() {
 
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
     updateSmoothDayNightCycle(delta);
+    vfxManager.update(delta, camera);
 
     renderer.render(scene, camera);
 }
@@ -2333,68 +2402,6 @@ const hemiDayTop     = new THREE.Color(0xdcefff);
 const hemiDayGround  = new THREE.Color(0x6e7568);
 const hemiDuskTop    = new THREE.Color(0x7c3aed);
 const hemiDuskGround = new THREE.Color(0x381907);
-const hemiNightTop   = new THREE.Color(0x0e182e);
-const hemiNightGround= new THREE.Color(0x050a12);
-
-let lastCheckedHour = 7;
-
-function updateSmoothDayNightCycle(delta) {
-    if (isTimeRunning) {
-        targetDecimalTime = (targetDecimalTime + delta * timeSpeed) % 24;
-        currentDecimalTime = targetDecimalTime;
-    } else {
-        const diff = targetDecimalTime - currentDecimalTime;
-        if (Math.abs(diff) > 0.001) {
-            currentDecimalTime += diff * Math.min(1.0, delta * 3.5);
-        } else {
-            currentDecimalTime = targetDecimalTime;
-        }
-    }
-
-    const h = (currentDecimalTime % 24 + 24) % 24;
-    sceneLightState = (h >= 18 || h < 6) ? 'night' : 'day';
-
-    // Atualiza HUD com minutos contínuos (formato HH:MM)
-    const hInt = Math.floor(h);
-    const mInt = Math.floor((h - hInt) * 60);
-    const hudHora = document.getElementById('hud-sim-hora');
-    if (hudHora) {
-        hudHora.textContent = `${String(hInt).padStart(2, '0')}:${String(mInt).padStart(2, '0')}`;
-    }
-
-    // Sincroniza estado dos agentes quando a hora inteira muda
-    if (hInt !== lastCheckedHour) {
-        lastCheckedHour = hInt;
-        if (citySimulator && citySimulator.estado) {
-            citySimulator.estado.hora = hInt;
-            peakHourAgent(grafo, hInt);
-            atualizarPainelHUD();
-        }
-    }
-
-    // Trajetória orbital do Sol (Leste -> Oeste durante o dia: 6h às 18h)
-    const sunAngle = ((h - 6) / 12) * Math.PI;
-    if (sunLight) {
-        sunLight.position.x = -240 * Math.cos(sunAngle);
-        sunLight.position.y = Math.max(-40, 260 * Math.sin(sunAngle));
-        sunLight.position.z = 130;
-    }
-
-    // Trajetória orbital da Lua (Noite: 18h às 6h)
-    if (moonLight) {
-        const moonAngle = sunAngle + Math.PI;
-        moonLight.position.x = -240 * Math.cos(moonAngle);
-        moonLight.position.y = Math.max(-40, 260 * Math.sin(moonAngle));
-        moonLight.position.z = -130;
-    }
-
-    // Fator de Luz Solar (0 = Noite, 1 = Meio-Dia)
-    let sunFactor = 0;
-    if (h >= 5.5 && h <= 18.5) {
-        sunFactor = Math.sin(((h - 5.5) / 13) * Math.PI);
-    }
-    sunFactor = Math.max(0, Math.min(1, sunFactor));
-
     // Fator Noturno (0 = Dia Pleno 07h-17h, 1 = Plena Noite 19h30-05h30)
     let nightFactor = 0;
     if (h >= 19.5 || h < 5.5) {
