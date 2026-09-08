@@ -3,6 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
 import { VFXManager } from './vfx.js';
 import { StorytellingTour } from './storytelling.js';
+import { PoleManager, TrafficManager, RepairManager } from './cityEntities.js';
+
+let poleManager, trafficManager, repairManager;
 
 const container = document.getElementById('canvas-container');
 
@@ -1250,8 +1253,8 @@ function createSolarFarm(block) {
     group.lookAt(0, 0, 0);
     cityGroup.add(group);
 
-    const rows = 16;
-    const cols = 16;
+    const rows = 26;
+    const cols = 26;
     const spacingX = 2.8;
     const spacingZ = 3.5;
     const panelCount = rows * cols;
