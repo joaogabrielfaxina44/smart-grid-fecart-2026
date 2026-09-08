@@ -677,7 +677,7 @@ function buildInstancedRooftopsAndDetails() {
 
     createBatch(unitBoxGeometry, materials.solar, microSolarInstancesData, (d, item) => {
         d.scale.set(item.w, item.h, item.d);
-        if (item.rotX) d.rotation.set(item.rotX, 0, 0);
+        d.rotation.x = item.rotX || 0;
     }, false, true);
 
     createBatch(unitBoxGeometry, detailMats.railing, railingInstancesData, (d, item) => {
