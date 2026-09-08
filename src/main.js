@@ -2402,6 +2402,67 @@ const hemiDayTop     = new THREE.Color(0xdcefff);
 const hemiDayGround  = new THREE.Color(0x6e7568);
 const hemiDuskTop    = new THREE.Color(0x7c3aed);
 const hemiDuskGround = new THREE.Color(0x381907);
+const hemiNightTop   = new THREE.Color(0x0e182e);
+const hemiNightGround= new THREE.Color(0x050a12);
+
+let lastCheckedHour = 7;
+
+function updateSmoothDayNightCycle(delta) {
+    if (isTimeRunning) {
+        targetDecimalTime = (targetDecimalTime + delta * timeSpeed) % 24;
+        currentDecimalTime = targetDecimalTime;
+    } else {
+        const diff = targetDecimalTime - currentDecimalTime;
+        if (Math.abs(diff) > 0.001) {
+            currentDecimalTime += diff * Math.min(1.0, delta * 3.5);
+        } else {
+            currentDecimalTime = targetDecimalTime;
+        }
+    }
+
+    const h = (currentDecimalTime % 24 + 24) % 24;
+    sceneLightState = (h >= 18 || h < 6) ? 'night' : 'day';
+
+    // Atualiza HUD com minutos contínuos (formato HH:MM)
+    const hInt = Math.floor(h);
+    const mInt = Math.floor((h - hInt) * 60);
+    const hudHora = document.getElementById('hud-sim-hora');
+    if (hudHora) {
+        hudHora.textContent = `${String(hInt).padStart(2, '0')}:${String(mInt).padStart(2, '0')}`;
+    }
+
+    // Sincroniza estado dos agentes quando a hora inteira muda
+    if (hInt !== lastCheckedHour) {
+        lastCheckedHour = hInt;
+        if (typeof citySimulator !== 'undefined' && citySimulator.estado) {
+            citySimulator.estado.hora = hInt;
+            citySimulator.tick(0);
+        }
+    }
+
+    // Trajetória orbital do Sol (Leste -> Oeste durante o dia: 6h às 18h)
+    const sunAngle = ((h - 6) / 12) * Math.PI;
+    if (sunLight) {
+        sunLight.position.x = -240 * Math.cos(sunAngle);
+        sunLight.position.y = Math.max(-40, 260 * Math.sin(sunAngle));
+        sunLight.position.z = 130;
+    }
+
+    // Trajetória orbital da Lua (Noite: 18h às 6h)
+    if (moonLight) {
+        const moonAngle = sunAngle + Math.PI;
+        moonLight.position.x = -240 * Math.cos(moonAngle);
+        moonLight.position.y = Math.max(-40, 260 * Math.sin(moonAngle));
+        moonLight.position.z = -130;
+    }
+
+    // Fator de Luz Solar (0 = Noite, 1 = Meio-Dia)
+    let sunFactor = 0;
+    if (h >= 5.5 && h <= 18.5) {
+        sunFactor = Math.sin(((h - 5.5) / 13) * Math.PI);
+    }
+    sunFactor = Math.max(0, Math.min(1, sunFactor));
+
     // Fator Noturno (0 = Dia Pleno 07h-17h, 1 = Plena Noite 19h30-05h30)
     let nightFactor = 0;
     if (h >= 19.5 || h < 5.5) {
