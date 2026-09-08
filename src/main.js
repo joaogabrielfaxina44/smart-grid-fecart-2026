@@ -1767,7 +1767,9 @@ function createTransmissionLines() {
         { u: 'Hospital_Prontomed', v: 'Data_Center' },
         { u: 'Centro_Comercial', v: 'Shopping_Metropolitano' },
         { u: 'Bairro_Residencial_A', v: 'Bairro_Residencial_B' },
-        { u: 'Zona_Industrial_A', v: 'Shopping_Metropolitano' }
+        { u: 'Zona_Industrial_A', v: 'Shopping_Metropolitano' },
+        { u: 'Fazenda_Eolica', v: 'Subestacao_Sul' },
+        { u: 'Fazenda_Eolica', v: 'Subestacao_Norte' }
     ];
 
     const group = new THREE.Group();
@@ -1782,17 +1784,22 @@ function createTransmissionLines() {
         const p2 = backendNodePositions[edge.v];
 
         if (p1 && p2) {
-            const points = [];
-            const segments = 16;
-            const sagAmount = 4.0;
-            for (let i = 0; i <= segments; i++) {
-                const t = i / segments;
-                const x = THREE.MathUtils.lerp(p1.x, p2.x, t);
-                const z = THREE.MathUtils.lerp(p1.z, p2.z, t);
-                const yLinear = THREE.MathUtils.lerp(p1.y, p2.y, t);
-                const sag = 4 * sagAmount * t * (1 - t);
-                points.push(new THREE.Vector3(x, yLinear - sag, z));
-            }
+            // Roteamento Ortogonal estilo Manhattan para evitar colisão com prédios
+            const roadOffset = BLOCK_SIZE / 2 + ROAD_WIDTH / 2;
+            const h = 32.0; // Altura segura para passar sobre a cidade e evitar cruzamento com prédios
+            
+            const roadX1 = p1.x + Math.sign(p2.x - p1.x || 1) * roadOffset;
+            const roadZ2 = p2.z + Math.sign(p1.z - p2.z || 1) * roadOffset;
+            
+            const points = [
+                p1,
+                new THREE.Vector3(p1.x, h, p1.z),
+                new THREE.Vector3(roadX1, h, p1.z),
+                new THREE.Vector3(roadX1, h, roadZ2),
+                new THREE.Vector3(p2.x, h, roadZ2),
+                new THREE.Vector3(p2.x, h, p2.z),
+                p2
+            ];
 
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
             const line = new THREE.Line(geometry, powerMats.wireGlowing);
@@ -1804,7 +1811,7 @@ function createTransmissionLines() {
                 backendEdgeId: `${edge.u}-${edge.v}`,
                 u: edge.u,
                 v: edge.v,
-                currentSpeed: 5.0, // Velocidade padrão do dash (multiplicador)
+                currentSpeed: 5.0,
                 broken: false
             };
             line.matrixAutoUpdate = false;
@@ -1812,390 +1819,6 @@ function createTransmissionLines() {
             group.add(line);
         }
     });
-}
-
-// ── Raycaster & Cliques ─────────────────────────────────────
-
-const raycaster = new THREE.Raycaster();
-raycaster.params.Line.threshold = 1.5;
-const mouse = new THREE.Vector2();
-
-function setupRaycaster() {
-    renderer.domElement.addEventListener('click', (event) => {
-        if (mouseMovedDistance > 8) return;
-
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, camera);
-
-        const interactables = [];
-        powerGridObjects.forEach(g => {
-            g.children.forEach(c => interactables.push(c));
-        });
-
-        const intersects = raycaster.intersectObjects(interactables, false);
-        if (intersects.length > 0) {
-            let target = intersects[0].object;
-
-            if (target.userData?.backendEdgeId && target.userData.u && target.userData.v) {
-                console.log(`[3D Click] Falha simulada pelo clique na linha: ${target.userData.u} ↔ ${target.userData.v}`);
-                citySimulator.simularFalha(target.userData.u, target.userData.v);
-                return;
-            }
-
-            while (target.parent && !target.parent.userData.isGridNode) {
-                target = target.parent;
-            }
-            if (target.parent && target.parent.userData.isGridNode) {
-                triggerBlackout(target.parent);
-            }
-        }
-    });
-}
-
-function setWireMaterial(group, matKey) {
-    group.children.forEach(child => {
-        if ((child.isLine || child.isLineSegments) && child.userData[matKey]) {
-            child.material = child.userData[matKey];
-        }
-    });
-}
-
-function triggerBlackout(targetGroup) {
-    if (!targetGroup.userData.active) return;
-    targetGroup.userData.active = false;
-    setWireMaterial(targetGroup, 'blackoutMat');
-
-    targetGroup.traverse(child => {
-        if (child.name === "streetLampBulb" && child.material) {
-            child.material.emissive.setHex(0x000000);
-        }
-    });
-}
-
-let sceneLightState = 'day';
-
-function setupUI() {
-    const toggleBtn = document.getElementById('toggle-panel-btn');
-    const panel = document.getElementById('control-panel');
-
-    if (toggleBtn && panel) {
-        toggleBtn.addEventListener('click', () => {
-            panel.classList.toggle('hidden');
-        });
-    }
-
-    // 0. Botão: Pausar / Destravar Tempo (Play/Pause)
-    const btnToggleTime = document.getElementById('btn-toggle-time');
-    const iconPause = document.getElementById('icon-time-pause');
-    const iconPlay = document.getElementById('icon-time-play');
-    const textTimeToggle = document.getElementById('time-toggle-text');
-
-    btnToggleTime?.addEventListener('click', () => {
-        isTimeRunning = !isTimeRunning;
-        if (isTimeRunning) {
-            btnToggleTime.className = 'control-btn success';
-            if (iconPause) iconPause.style.display = 'block';
-            if (iconPlay) iconPlay.style.display = 'none';
-            if (textTimeToggle) textTimeToggle.textContent = 'Pausar Tempo (Travar)';
-            console.log('[Simulador] Tempo destravado (avanço contínuo ativo).');
-        } else {
-            btnToggleTime.className = 'control-btn warning';
-            if (iconPause) iconPause.style.display = 'none';
-            if (iconPlay) iconPlay.style.display = 'block';
-            if (textTimeToggle) textTimeToggle.textContent = 'Destravar Tempo (Rodar)';
-            console.log('[Simulador] Tempo travado / pausado.');
-        }
-    });
-
-    // 1. Botão: Avançar 1 Hora (+1h)
-    document.getElementById('btn-avancar-hora')?.addEventListener('click', () => {
-        const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
-        targetDecimalTime = proximaHora;
-        currentDecimalTime = proximaHora;
-        lastCheckedHour = proximaHora;
-        if (citySimulator?.estado) citySimulator.estado.hora = proximaHora;
-        console.log(`[Painel] Botão Avançar Hora clicado (${proximaHora}:00).`);
-        const logs = peakHourAgent(citySimulator.grafo, proximaHora);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
-    });
-
-    // 2. Botão: Simular Sobrecarga
-    document.getElementById('btn-sobrecarga')?.addEventListener('click', () => {
-        const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
-        if (noIndustria) {
-            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
-            noIndustria.demanda_kw_atual = baseDemand * 2.5;
-            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
-        }
-        const logs = demandResponseAgent(citySimulator.grafo);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
-    });
-
-    // 3. Botão: Forçar Noite / Clima (20h)
-    document.getElementById('btn-forcar-noite')?.addEventListener('click', () => {
-        targetDecimalTime = 20.0;
-        currentDecimalTime = 20.0;
-        lastCheckedHour = 20;
-        if (citySimulator?.estado) citySimulator.estado.hora = 20;
-        console.log('[Painel] Botão Forçar Noite clicado (20:00).');
-        const logs = peakHourAgent(citySimulator.grafo, 20);
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
-    });
-
-    // 4. Botão: Falha na Usina (Blackout / Self-Healing)
-    document.getElementById('btn-falha-usina')?.addEventListener('click', () => {
-        console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
-        const logs = citySimulator.grafo.romperAresta('Subestacao_Central', 'Hospital_Prontomed');
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
-    });
-
-    // 5. Botão: Resetar Cidade
-    document.getElementById('btn-reset')?.addEventListener('click', () => {
-        console.log('[Painel] Resetando cidade...');
-        targetDecimalTime = 7.0;
-        currentDecimalTime = 7.0;
-        lastCheckedHour = 7;
-        const logs = citySimulator.resetar();
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, logs);
-    });
-
-    // 6. Controles de Câmera
-    document.getElementById('btn-toggle-cam-mode')?.addEventListener('click', () => {
-        setCameraMode(cameraMode === 'fly' ? 'orbit' : 'fly');
-    });
-
-    document.getElementById('btn-street-level')?.addEventListener('click', () => {
-        if (cameraMode !== 'fly') setCameraMode('fly');
-        targetPitch = 0.04;
-        targetYaw = 0;
-        smoothGlideTo(defaultStreetPos);
-    });
-
-    document.getElementById('btn-aerial-view')?.addEventListener('click', () => {
-        if (cameraMode !== 'fly') setCameraMode('fly');
-        targetPitch = -0.58;
-        targetYaw = -0.68;
-        smoothGlideTo(defaultAerialPos);
-    });
-}
-
-let hemiLight = null;
-let sunLight = null;
-let moonLight = null;
-let starMaterial = null;
-
-function createLighting() {
-    hemiLight = new THREE.HemisphereLight(0xdcefff, 0x6e7568, 1.45);
-    scene.add(hemiLight);
-
-    // Luz Solar (Dia)
-    sunLight = new THREE.DirectionalLight(0xfff3d7, 3.0);
-    sunLight.position.set(-180, 250, 130);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.camera.near = 40;
-    sunLight.shadow.camera.far = 650;
-    sunLight.shadow.camera.left = -260;
-    sunLight.shadow.camera.right = 260;
-    sunLight.shadow.camera.top = 260;
-    sunLight.shadow.camera.bottom = -260;
-    sunLight.shadow.bias = -0.0004;
-    sunLight.shadow.normalBias = 0.02;
-    scene.add(sunLight);
-
-    // Luz Lunar (Noite - iluminação azulada elegante e sombras suaves à noite)
-    moonLight = new THREE.DirectionalLight(0x8eaed6, 0.0);
-    moonLight.position.set(180, 250, -130);
-    moonLight.castShadow = true;
-    moonLight.shadow.mapSize.set(1024, 1024);
-    moonLight.shadow.camera.near = 40;
-    moonLight.shadow.camera.far = 650;
-    moonLight.shadow.camera.left = -260;
-    moonLight.shadow.camera.right = 260;
-    moonLight.shadow.camera.top = 260;
-    moonLight.shadow.camera.bottom = -260;
-    moonLight.shadow.bias = -0.0004;
-    moonLight.shadow.normalBias = 0.02;
-    scene.add(moonLight);
-}
-
-function createStarfield() {
-    const starCount = 1600;
-    const positions = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-
-    for (let i = 0; i < starCount; i++) {
-        const radius = 600 + Math.random() * 350;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(0.04 + Math.random() * 0.96);
-
-        positions[i * 3]     = radius * Math.sin(phi) * Math.cos(theta);
-        positions[i * 3 + 1] = radius * Math.cos(phi);
-        positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-
-        const starType = Math.random();
-        if (starType > 0.75) {
-            colors[i * 3] = 0.85; colors[i * 3 + 1] = 0.93; colors[i * 3 + 2] = 1.0;
-        } else if (starType > 0.5) {
-            colors[i * 3] = 1.0; colors[i * 3 + 1] = 0.94; colors[i * 3 + 2] = 0.82;
-        } else {
-            colors[i * 3] = 0.98; colors[i * 3 + 1] = 0.98; colors[i * 3 + 2] = 0.98;
-        }
-    }
-
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    starMaterial = new THREE.PointsMaterial({
-        size: 2.2,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.0,
-        sizeAttenuation: false,
-        depthWrite: false
-    });
-
-    const starPoints = new THREE.Points(starGeo, starMaterial);
-    scene.add(starPoints);
-}
-
-function initializeScene() {
-    createGround();
-    createRoadNetwork();
-    createDistricts();
-    createTrafficHints();
-    createLighting();
-    createStarfield();
-    createPowerGrid();
-    createTransmissionLines();
-
-    buildInstancedTrees();
-    buildInstancedBases();
-    buildInstancedPoles();
-    buildInstancedRooftopsAndDetails();
-
-    cityGroup.updateMatrixWorld(true);
-
-    setupRaycaster();
-    setupUI();
-    setCameraMode('fly');
-    window.smartCityStats = cityStats;
-}
-
-// ── Sincronização Visual com o Motor de IA ───────────────────
-
-const ID_MAP = {
-    'Subestacao_Central':   'Subestacao_Central',
-    'Subestacao_Norte':     'Subestacao_Norte',
-    'Subestacao_Sul':       'Subestacao_Sul',
-    'Hospital_Prontomed':   'Hospital_Prontomed',
-    'Bairro_Residencial_A': 'Bairro_Residencial_A',
-    'Bairro_Residencial_B': 'Bairro_Residencial_B',
-    'Centro_Comercial':     'Centro_Comercial',
-    'Shopping_Metropolitano':'Shopping_Metropolitano',
-    'Zona_Industrial_A':    'Zona_Industrial_A',
-    'Data_Center':          'Data_Center',
-    'Escolas':              'Escolas',
-    'Fazenda_Solar':        'Fazenda_Solar'
-};
-
-function syncSceneWithBackend(grafo, estado, logs) {
-    if (logs && logs.length > 0) {
-        console.groupCollapsed(`[SmartGrid] Tick ${estado.hora}h — ${logs.length} ação(ões)`);
-        logs.forEach(l => console.log(l));
-        console.groupEnd();
-    }
-
-    // ── 1. Sincronizar Nós (Apagão por bairro / Edifícios) ──────
-    for (const [nodeId, node] of grafo.nodes) {
-        const threeId = ID_MAP[nodeId];
-        if (!threeId) continue;
-
-        const bloco3D = cityGroup.children.find(
-            c => c.isGroup && c.userData?.backendId === threeId
-        );
-        if (!bloco3D) continue;
-
-        bloco3D.traverse(child => {
-            if (child.name === "streetLampBulb" && child.material) {
-                if (!node.status_energizado) {
-                    child.material.emissive?.setHex(0x000000);
-                } else if (sceneLightState === 'night') {
-                    child.material.emissive?.setHex(0xffaa22);
-                }
-                return;
-            }
-
-            if (!child.isMesh || !child.material) return;
-
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => {
-                if (!mat) return;
-
-                if (!node.status_energizado) {
-                    if (mat.emissive) mat.emissive.setHex(0x000000);
-                    if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0;
-                } else {
-                    if (sceneLightState === 'night' && mat.map && mat.emissive) {
-                        mat.emissive.setHex(0x555544);
-                        mat.emissiveIntensity = 1.0;
-                    } else if (sceneLightState === 'day' && mat.emissive) {
-                        mat.emissive.setHex(0x000000);
-                    }
-                }
-            });
-        });
-    }
-
-    // ── 2. Sincronizar Linhas de Transmissão (Sobrecarga / Falha) ──
-    const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
-    if (transLinesGroup) {
-        for (const edge of grafo.edges.values()) {
-            const edgeKey1 = `${edge.origem}-${edge.destino}`;
-            const edgeKey2 = `${edge.destino}-${edge.origem}`;
-            const linha = transLinesGroup.children.find(
-                l => l.userData?.backendEdgeId === edgeKey1 || l.userData?.backendEdgeId === edgeKey2
-            );
-            if (!linha) continue;
-
-            const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
-
-            if (!edge.status_ativa) {
-                linha.material = powerMats.wireBlackout;
-                linha.userData.broken = true;
-            } else if (taxaCarga >= 0.95) {
-                linha.material = powerMats.wireCritical; // Vermelho
-                linha.userData.currentSpeed = 15.0;      // 3x mais rápido
-                linha.userData.broken = false;
-            } else if (taxaCarga >= 0.85) {
-                linha.material = powerMats.wireOverload; // Laranja
-                linha.userData.currentSpeed = 10.0;      // 2x mais rápido
-                linha.userData.broken = false;
-            } else {
-                linha.material = powerMats.wireGlowing;  // Azul neon
-                linha.userData.currentSpeed = 5.0;       // Velocidade normal
-                linha.userData.broken = false;
-            }
-        }
-    }
-
-    // ── 3. Atualizar HUD com dados da simulação ──────────────
-    const hudDemanda = document.getElementById('hud-sim-demanda');
-    const hudClima = document.getElementById('hud-sim-clima');
-    if (estado && estado.hora !== undefined) {
-        targetDecimalTime = estado.hora;
-    }
-    if (hudDemanda) hudDemanda.textContent = `${grafo.demandaTotalKw().toFixed(0)} kW`;
-    if (hudClima)   hudClima.textContent   = estado.clima;
-}
-
-function atualizarPainelHUD() {
-    if (typeof syncSceneWithBackend === 'function' && typeof citySimulator !== 'undefined') {
-        syncSceneWithBackend(citySimulator.grafo, citySimulator.estado, []);
-    }
 }
 
 // ── Instanciação do Simulador ─────────────────────────────────
