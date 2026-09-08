@@ -736,10 +736,6 @@ const cityStats = {
 
 const treeInstancesData = [];
 const baseInstancesData = [];
-const carInstancesData = [];
-const poleShaftData = [];
-const poleTransData = [];
-const poleLampData = [];
 
 function seededRandom(seed) {
     let value = seed % 2147483647;
@@ -1316,9 +1312,9 @@ function createWindFarm(block) {
     group.lookAt(0, 0, 0);
     cityGroup.add(group);
 
-    const rows = 5;
-    const cols = 5;
-    const spacing = 8;
+    const rows = 8;
+    const cols = 8;
+    const spacing = 14;
     const offsetX = (cols * spacing) / 2;
     const offsetZ = (rows * spacing) / 2;
 
@@ -1467,253 +1463,10 @@ const carTailMaterial = new THREE.MeshBasicMaterial({
     opacity: 0.95
 });
 
-function createTrafficHints() {
-    const carMaterials = [materials.carRed, materials.carWhite, materials.carBlue, materials.carGray];
-    const carCount = 180;
-
-    for (let i = 0; i < carCount; i += 1) {
-        const road = ROAD_COORDS[Math.floor(noise(i, i + 1, 130) * ROAD_COORDS.length)];
-        const along = -WORLD_SIZE / 2 + EDGE_MARGIN + noise(i, i + 2, 131) * (WORLD_SIZE - EDGE_MARGIN * 2);
-        const horizontal = noise(i, i + 3, 132) > 0.5;
-        const laneOffset = noise(i, i + 4, 133) > 0.5 ? -2.2 : 2.2;
-        const width = horizontal ? 2.6 : 1.3;
-        const depth = horizontal ? 1.3 : 2.6;
-        const x = horizontal ? along : road + laneOffset;
-        const z = horizontal ? road + laneOffset : along;
-
-        carInstancesData.push({
-            x, y: 0.42, z,
-            width, height: 0.45, depth,
-            matIndex: i % carMaterials.length,
-            horizontal
-        });
-        cityStats.cars += 1;
-    }
-
-    const dummy = new THREE.Object3D();
-
-    carMaterials.forEach((mat, matIdx) => {
-        const matchingCars = carInstancesData.filter(c => c.matIndex === matIdx);
-        if (matchingCars.length === 0) return;
-
-        const carMesh = new THREE.InstancedMesh(unitBoxGeometry, mat, matchingCars.length);
-        carMesh.castShadow = false;
-        carMesh.receiveShadow = false;
-        carMesh.matrixAutoUpdate = false;
-
-        matchingCars.forEach((c, idx) => {
-            dummy.position.set(c.x, c.y, c.z);
-            dummy.scale.set(c.width, c.height, c.depth);
-            dummy.updateMatrix();
-            carMesh.setMatrixAt(idx, dummy.matrix);
-        });
-
-        carMesh.instanceMatrix.needsUpdate = true;
-        carMesh.updateMatrix();
-        cityGroup.add(carMesh);
-    });
-
-    // Faróis dianteiros e lanternas traseiras dos carros
-    const headLightsData = [];
-    const tailLightsData = [];
-
-    carInstancesData.forEach(c => {
-        if (c.horizontal) {
-            headLightsData.push({ x: c.x + c.width * 0.48, y: c.y, z: c.z - 0.35, w: 0.12, h: 0.14, d: 0.18 });
-            headLightsData.push({ x: c.x + c.width * 0.48, y: c.y, z: c.z + 0.35, w: 0.12, h: 0.14, d: 0.18 });
-            tailLightsData.push({ x: c.x - c.width * 0.48, y: c.y, z: c.z - 0.35, w: 0.12, h: 0.14, d: 0.18 });
-            tailLightsData.push({ x: c.x - c.width * 0.48, y: c.y, z: c.z + 0.35, w: 0.12, h: 0.14, d: 0.18 });
-        } else {
-            headLightsData.push({ x: c.x - 0.35, y: c.y, z: c.z + c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
-            headLightsData.push({ x: c.x + 0.35, y: c.y, z: c.z + c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
-            tailLightsData.push({ x: c.x - 0.35, y: c.y, z: c.z - c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
-            tailLightsData.push({ x: c.x + 0.35, y: c.y, z: c.z - c.depth * 0.48, w: 0.18, h: 0.14, d: 0.12 });
-        }
-    });
-
-    if (headLightsData.length > 0) {
-        const headMesh = new THREE.InstancedMesh(unitBoxGeometry, carLightMaterial, headLightsData.length);
-        headLightsData.forEach((h, idx) => {
-            dummy.position.set(h.x, h.y, h.z);
-            dummy.scale.set(h.w, h.h, h.d);
-            dummy.updateMatrix();
-            headMesh.setMatrixAt(idx, dummy.matrix);
-        });
-        headMesh.instanceMatrix.needsUpdate = true;
-        cityGroup.add(headMesh);
-
-        const tailMesh = new THREE.InstancedMesh(unitBoxGeometry, carTailMaterial, tailLightsData.length);
-        tailLightsData.forEach((t, idx) => {
-            dummy.position.set(t.x, t.y, t.z);
-            dummy.scale.set(t.w, t.h, t.d);
-            dummy.updateMatrix();
-            tailMesh.setMatrixAt(idx, dummy.matrix);
-        });
-        tailMesh.instanceMatrix.needsUpdate = true;
-        cityGroup.add(tailMesh);
-    }
-}
-
 // ── Smart Grid Infrastructure ───────────────────────────────
 
 const powerGridObjects = [];
 
-// Geometrias precisas e realistas para postes da rede elétrica & iluminação pública
-const poleShaftGeo = new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8);
-const poleCrossArmGeo = new THREE.BoxGeometry(1.8, 0.12, 0.12);
-const transformerGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.75, 8);
-// Braço tubular metálico de fixação da luminária (conecta o poste à luminária sobre a rua)
-const streetArmGeo = new THREE.CylinderGeometry(0.045, 0.045, 1.45, 6);
-// Cúpula moderna da luminária pública
-const lampHeadGeo = new THREE.BoxGeometry(0.26, 0.1, 0.52);
-// Lâmpada emissiva
-const bulbGeo = new THREE.SphereGeometry(0.12, 8, 8);
-
-function collectPoleInstance(group, x, z, angleRad = 0, opts = {}) {
-    const { hasTransformer = false, hasStreetlight = true, lampAngleRad = 0 } = opts;
-
-    poleShaftData.push({ x, z, angleRad });
-    if (hasTransformer) poleTransData.push({ x, z, angleRad });
-    if (hasStreetlight) poleLampData.push({ x, z, angleRad, lampAngleRad });
-
-    const insulatorOffsets = [-0.75, 0, 0.75];
-    const insulatorWorldPositions = [];
-    insulatorOffsets.forEach(offX => {
-        const pt = new THREE.Vector3(offX, 7.02, 0);
-        pt.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
-        pt.add(new THREE.Vector3(x, 0, z));
-        insulatorWorldPositions.push(pt);
-    });
-
-    return insulatorWorldPositions;
-}
-
-function buildInstancedPoles() {
-    const dummy = new THREE.Object3D();
-    const Y_AXIS = new THREE.Vector3(0, 1, 0);
-
-    if (poleShaftData.length > 0) {
-        const shaftMesh = new THREE.InstancedMesh(poleShaftGeo, powerMats.woodPole, poleShaftData.length);
-        const crossArmMesh = new THREE.InstancedMesh(poleCrossArmGeo, powerMats.woodPole, poleShaftData.length);
-        shaftMesh.castShadow = true;
-        crossArmMesh.castShadow = false;
-        shaftMesh.matrixAutoUpdate = false;
-        crossArmMesh.matrixAutoUpdate = false;
-
-        poleShaftData.forEach((p, i) => {
-            dummy.position.set(p.x, 3.6, p.z);
-            dummy.rotation.set(0, p.angleRad, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            shaftMesh.setMatrixAt(i, dummy.matrix);
-
-            dummy.position.set(p.x, 6.85, p.z);
-            dummy.updateMatrix();
-            crossArmMesh.setMatrixAt(i, dummy.matrix);
-        });
-
-        shaftMesh.instanceMatrix.needsUpdate = true;
-        crossArmMesh.instanceMatrix.needsUpdate = true;
-        shaftMesh.updateMatrix();
-        crossArmMesh.updateMatrix();
-        cityGroup.add(shaftMesh);
-        cityGroup.add(crossArmMesh);
-    }
-
-    if (poleTransData.length > 0) {
-        const transMesh = new THREE.InstancedMesh(transformerGeo, powerMats.transformer, poleTransData.length);
-        transMesh.castShadow = false;
-        transMesh.matrixAutoUpdate = false;
-
-        poleTransData.forEach((p, i) => {
-            dummy.position.set(p.x + 0.35, 5.4, p.z);
-            dummy.rotation.set(0, p.angleRad, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            transMesh.setMatrixAt(i, dummy.matrix);
-        });
-
-        transMesh.instanceMatrix.needsUpdate = true;
-        transMesh.updateMatrix();
-        cityGroup.add(transMesh);
-    }
-
-    if (poleLampData.length > 0) {
-        const streetArmMesh = new THREE.InstancedMesh(streetArmGeo, powerMats.metalArm, poleLampData.length);
-        const lampHeadMesh = new THREE.InstancedMesh(lampHeadGeo, powerMats.streetLamp, poleLampData.length);
-        const lampBulbMesh = new THREE.InstancedMesh(bulbGeo, powerMats.streetLampBulb, poleLampData.length);
-        const groundPoolGeo = new THREE.PlaneGeometry(9.0, 9.0);
-        const groundPoolMesh = new THREE.InstancedMesh(groundPoolGeo, groundLightPoolMaterial, poleLampData.length);
-
-        streetArmMesh.castShadow = false;
-        lampHeadMesh.castShadow = false;
-        lampBulbMesh.castShadow = false;
-        groundPoolMesh.castShadow = false;
-
-        streetArmMesh.matrixAutoUpdate = false;
-        lampHeadMesh.matrixAutoUpdate = false;
-        lampBulbMesh.matrixAutoUpdate = false;
-        groundPoolMesh.matrixAutoUpdate = false;
-
-        const armPitch = 0.38; // Inclinação do braço tubular
-
-        poleLampData.forEach((p, i) => {
-            const angle = p.lampAngleRad !== undefined ? p.lampAngleRad : p.angleRad;
-            const poleBase = new THREE.Vector3(p.x, 0, p.z);
-
-            // 1. Braço tubular metálico (sai do poste em direção à rua)
-            const armOffset = new THREE.Vector3(0, 5.48, 0.68);
-            armOffset.applyAxisAngle(Y_AXIS, angle);
-            dummy.position.copy(poleBase).add(armOffset);
-            dummy.rotation.set(-armPitch, angle, 0, 'YXZ');
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            streetArmMesh.setMatrixAt(i, dummy.matrix);
-
-            // 2. Cúpula da luminária pública
-            const headOffset = new THREE.Vector3(0, 5.82, 1.45);
-            headOffset.applyAxisAngle(Y_AXIS, angle);
-            dummy.position.copy(poleBase).add(headOffset);
-            dummy.rotation.set(0, angle, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            lampHeadMesh.setMatrixAt(i, dummy.matrix);
-
-            // 3. Lâmpada brilhante (na parte inferior da luminária)
-            const bulbOffset = new THREE.Vector3(0, 5.74, 1.45);
-            bulbOffset.applyAxisAngle(Y_AXIS, angle);
-            dummy.position.copy(poleBase).add(bulbOffset);
-            dummy.rotation.set(0, 0, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            lampBulbMesh.setMatrixAt(i, dummy.matrix);
-
-            // 4. Piscina circular suave de luz âmbar no asfalto da rua
-            const groundOffset = new THREE.Vector3(0, 0.04, 1.45);
-            groundOffset.applyAxisAngle(Y_AXIS, angle);
-            dummy.position.copy(poleBase).add(groundOffset);
-            dummy.rotation.set(-Math.PI / 2, 0, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            groundPoolMesh.setMatrixAt(i, dummy.matrix);
-        });
-
-        streetArmMesh.instanceMatrix.needsUpdate = true;
-        lampHeadMesh.instanceMatrix.needsUpdate = true;
-        lampBulbMesh.instanceMatrix.needsUpdate = true;
-        groundPoolMesh.instanceMatrix.needsUpdate = true;
-
-        streetArmMesh.updateMatrix();
-        lampHeadMesh.updateMatrix();
-        lampBulbMesh.updateMatrix();
-        groundPoolMesh.updateMatrix();
-
-        cityGroup.add(streetArmMesh);
-        cityGroup.add(lampHeadMesh);
-        cityGroup.add(lampBulbMesh);
-        cityGroup.add(groundPoolMesh);
-    }
-}
 
 function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat, overloadMat, sagAmount = 0.35) {
     const count = Math.min(posArray1.length, posArray2.length);
@@ -1752,6 +1505,19 @@ function addCatenaryWires(group, posArray1, posArray2, wireMaterial, blackoutMat
     group.add(lineSegments);
 }
 
+function spawnPole(x, z, angleRad, opts) {
+    poleManager.addPole(x, z, angleRad, opts);
+    const insulatorOffsets = [-0.75, 0, 0.75];
+    const insulatorWorldPositions = [];
+    insulatorOffsets.forEach(offX => {
+        const pt = new THREE.Vector3(offX, 7.02, 0);
+        pt.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleRad);
+        pt.add(new THREE.Vector3(x, 0, z));
+        insulatorWorldPositions.push(pt);
+    });
+    return insulatorWorldPositions;
+}
+
 function createPowerGrid() {
     const offset = ROAD_WIDTH / 2 + 0.6;
 
@@ -1773,7 +1539,7 @@ function createPowerGrid() {
                 const x = BLOCK_CENTERS[c];
                 const hasTrans = noise(r, c, 801) > 0.7;
                 
-                const pPos = collectPoleInstance(group, x, z + side * offset, 0, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
+                const pPos = spawnPole(x, z + side * offset, 0, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
                 if (prevPole) {
                     addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.35);
                 }
@@ -1800,7 +1566,7 @@ function createPowerGrid() {
                 const z = BLOCK_CENTERS[r];
                 const hasTrans = noise(r, c, 802) > 0.7;
                 
-                const pPos = collectPoleInstance(group, x + side * offset, z, Math.PI / 2, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
+                const pPos = spawnPole(x + side * offset, z, Math.PI / 2, { hasTransformer: hasTrans, hasStreetlight: true, lampAngleRad });
                 if (prevPole) {
                     addCatenaryWires(group, prevPole, pPos, powerMats.wireNormal, powerMats.wireBlackout, powerMats.wireOverload, 0.35);
                 }
@@ -1809,6 +1575,7 @@ function createPowerGrid() {
         }
     }
 }
+
 
 function createTransmissionLines() {
     const transmissionEdges = [
@@ -1896,6 +1663,10 @@ function setupRaycaster() {
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
+
+        if (poleManager && poleManager.checkClick(mouse, camera)) {
+            return;
+        }
 
         const interactables = [];
         powerGridObjects.forEach(g => {
@@ -2137,11 +1908,67 @@ function createStarfield() {
     scene.add(starPoints);
 }
 
+let activePole = null;
+
+function showPoleUI(pole) {
+    activePole = pole;
+    document.getElementById('pole-ui-container').style.display = 'block';
+    updatePoleUI();
+}
+
+function updatePoleUI() {
+    if (!activePole) return;
+    document.getElementById('pole-ui-id').innerText = '#' + activePole.userData.id;
+    const st = activePole.userData.status;
+    document.getElementById('pole-ui-status').innerText = st.charAt(0).toUpperCase() + st.slice(1);
+    
+    const dur = activePole.userData.durability;
+    const bar = document.getElementById('pole-ui-durability-bar');
+    bar.style.width = dur + '%';
+    
+    if (dur > 60) bar.style.background = '#2ecc71';
+    else if (dur > 20) bar.style.background = '#f1c40f';
+    else bar.style.background = '#e74c3c';
+    
+    const repairBtn = document.getElementById('pole-ui-repair-btn');
+    if (st === 'manutencao') {
+        repairBtn.innerText = 'Em Manutenção...';
+        repairBtn.disabled = true;
+        repairBtn.style.opacity = '0.5';
+    } else if (dur === 100) {
+        repairBtn.innerText = 'Componente Saudável';
+        repairBtn.disabled = true;
+        repairBtn.style.opacity = '0.5';
+    } else {
+        repairBtn.innerText = 'Solicitar Manutenção';
+        repairBtn.disabled = false;
+        repairBtn.style.opacity = '1.0';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('pole-ui-close-btn').addEventListener('click', () => {
+        activePole = null;
+        document.getElementById('pole-ui-container').style.display = 'none';
+    });
+
+    document.getElementById('pole-ui-repair-btn').addEventListener('click', () => {
+        if (activePole && repairManager) {
+            repairManager.dispatchRepair(activePole);
+            updatePoleUI();
+        }
+    });
+});
+
 function initializeScene() {
+    poleManager = new PoleManager(scene);
+    poleManager.onPoleClick = showPoleUI;
+    trafficManager = new TrafficManager(scene, ROAD_COORDS, BLOCK_SIZE, ROAD_WIDTH);
+    repairManager = new RepairManager(scene, poleManager);
+
     createGround();
     createRoadNetwork();
     createDistricts();
-    createTrafficHints();
     createLighting();
     createStarfield();
     createPowerGrid();
@@ -2149,8 +1976,9 @@ function initializeScene() {
 
     buildInstancedTrees();
     buildInstancedBases();
-    buildInstancedPoles();
     buildInstancedRooftopsAndDetails();
+
+    trafficManager.init();
 
     cityGroup.updateMatrixWorld(true);
 
@@ -2371,6 +2199,11 @@ function animate() {
     if (powerMats.wireCritical) {
         powerMats.wireCritical.opacity = 0.65 + Math.sin(now * 0.012) * 0.3;
     }
+
+    if (poleManager) poleManager.update(delta, now/1000);
+    if (trafficManager) trafficManager.update(delta);
+    if (repairManager) repairManager.update(delta, now/1000);
+    if (activePole) updatePoleUI();
 
     if (cameraMode === 'fly') {
         const rotFactor = 1 - Math.exp(-22 * delta);
