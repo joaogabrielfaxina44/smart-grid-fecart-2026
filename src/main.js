@@ -286,10 +286,11 @@ const powerMats = {
         emissiveIntensity: 0.0
     }),
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
-    wireGlowing: new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2 }),
-    wireOverload: new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2 }),
-    wireCritical: new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, linewidth: 2.5 }),
+    wireGlowing: new THREE.LineDashedMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2, dashSize: 4, gapSize: 2 }),
+    wireOverload: new THREE.LineDashedMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2, dashSize: 4, gapSize: 2 }),
+    wireCritical: new THREE.LineDashedMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, linewidth: 2.5, dashSize: 4, gapSize: 2 }),
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
+    wireHealing: new THREE.LineDashedMaterial({ color: 0x00ffff, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 2, gapSize: 1 }),
 };
 
 // ── Textura Radial de Iluminação Pública no Chão (Warm Light Pool) ──
@@ -776,7 +777,7 @@ function addBox({
 }
 
 function createGround() {
-    const terrain = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), materials.terrain);
+    const terrain = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE * 2.6, WORLD_SIZE * 2.6), materials.terrain);
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
     terrain.matrixAutoUpdate = false;
@@ -863,17 +864,33 @@ function getBlockBackendId(row, col, type) {
 function createDistricts() {
     for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let col = 0; col < GRID_SIZE; col += 1) {
+            const blockType = getBlockType(row, col);
             const block = {
                 row,
                 col,
                 index: row * GRID_SIZE + col,
                 x: BLOCK_CENTERS[col],
                 z: BLOCK_CENTERS[row],
-                type: getBlockType(row, col),
+                type: blockType,
                 label: `Quadra ${row}-${col}`
             };
 
-            createBlockBase(block);
+            // Afastar as fontes de energia da cidade (para fora da malha de quarteirões)
+            if (block.type === 'power_plant') {
+                block.x += 130;
+                block.z += 130;
+            } else if (block.type === 'solar_farm') {
+                block.x -= 130;
+                block.z -= 130;
+            } else if (block.type === 'wind_farm') {
+                block.x -= 130;
+                block.z += 130;
+            }
+
+            // Não cria base de quadra (quarteirão) para as usinas que estão afastadas
+            if (!['power_plant', 'solar_farm', 'wind_farm'].includes(block.type)) {
+                createBlockBase(block);
+            }
 
             const initialChildrenCount = cityGroup.children.length;
             const backendId = getBlockBackendId(row, col, block.type);
@@ -1176,25 +1193,33 @@ function createServiceBlock(block) {
 function createPowerPlant(block) {
     const group = new THREE.Group();
     group.name = `power_plant-${block.index}`;
-    group.matrixAutoUpdate = false;
+    // Construir tudo em torno da origem do grupo
+    group.position.set(block.x, 0, block.z);
+    
+    // Fazer a usina olhar para o centro da cidade (0,0,0)
+    group.lookAt(0, 0, 0);
+    
+    // Aumentar significativamente o tamanho da usina
+    group.scale.set(4.0, 4.0, 4.0);
+
     cityGroup.add(group);
     
-    // Prédio Principal em concreto escuro
-    addBox({ width: 14, height: 8, depth: 10, x: block.x, y: 4, z: block.z - 2, material: materials.darkConcrete, parent: group, cast: true, receive: true });
-    addBox({ width: 14.5, height: 0.5, depth: 10.5, x: block.x, y: 8.25, z: block.z - 2, material: materials.industryRoof, parent: group, cast: true, receive: true });
+    // Prédio Principal em concreto escuro (coordenadas locais agora)
+    addBox({ width: 14, height: 8, depth: 10, x: 0, y: 4, z: -2, material: materials.darkConcrete, parent: group, cast: true, receive: true });
+    addBox({ width: 14.5, height: 0.5, depth: 10.5, x: 0, y: 8.25, z: -2, material: materials.industryRoof, parent: group, cast: true, receive: true });
 
     // Chaminés detalhadas com luzes vermelhas de balizamento
     const stackGeo = new THREE.CylinderGeometry(0.8, 1.2, 20, 12);
     for (let i=0; i<3; i++) {
         const stack = new THREE.Mesh(stackGeo, materials.darkConcrete);
-        stack.position.set(block.x - 4 + i*4, 10, block.z + 5);
+        stack.position.set(-4 + i*4, 10, 5);
         stack.castShadow = true;
         stack.matrixAutoUpdate = false;
         stack.updateMatrix();
         group.add(stack);
         
         // Luz vermelha no topo
-        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: block.x - 4 + i*4, y: 20.2, z: block.z + 5, material: materials.redLight, parent: group, cast: false, receive: false });
+        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: -4 + i*4, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
     }
 
     // Torres de Resfriamento usando LatheGeometry
@@ -1206,25 +1231,31 @@ function createPowerPlant(block) {
     }
     const coolingTowerGeo = new THREE.LatheGeometry(points, 16);
     const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.darkConcrete);
-    coolingTower.position.set(block.x + 6, 0, block.z + 5);
+    coolingTower.position.set(6, 0, 5);
     coolingTower.castShadow = true;
     coolingTower.matrixAutoUpdate = false;
     coolingTower.updateMatrix();
     group.add(coolingTower);
     
     // Luz de balizamento na torre de resfriamento
-    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: block.x + 6, y: 20.2, z: block.z + 5, material: materials.redLight, parent: group, cast: false, receive: false });
+    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: 6, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
 
-    addPerimeterFence(group, block.x, block.z);
+    // Sem addPerimeterFence (para não limitar a escala gigante)
 }
 
 function createSolarFarm(block) {
     const group = new THREE.Group();
     group.name = `solar_farm-${block.index}`;
-    group.matrixAutoUpdate = false;
+    group.position.set(block.x, 0, block.z);
+    group.lookAt(0, 0, 0);
     cityGroup.add(group);
 
-    const panelCount = 8 * 8;
+    const rows = 16;
+    const cols = 16;
+    const spacingX = 2.8;
+    const spacingZ = 3.5;
+    const panelCount = rows * cols;
+    
     const imesh = new THREE.InstancedMesh(unitBoxGeometry, materials.solar, panelCount);
     imesh.castShadow = true;
     imesh.receiveShadow = true;
@@ -1232,11 +1263,15 @@ function createSolarFarm(block) {
     
     const dummy = new THREE.Object3D();
     let i = 0;
-    // Fileiras precisas e alinhadas
-    for (let r=0; r<8; r++) {
-        for (let c=0; c<8; c++) {
-            dummy.position.set(block.x - 7 + c*2.0, 0.8, block.z - 7 + r*2.0);
-            dummy.scale.set(1.8, 0.1, 1.2);
+    
+    // Fileiras precisas e alinhadas, centralizadas na origem do grupo
+    const offsetX = (cols * spacingX) / 2;
+    const offsetZ = (rows * spacingZ) / 2;
+    
+    for (let r=0; r<rows; r++) {
+        for (let c=0; c<cols; c++) {
+            dummy.position.set(-offsetX + c * spacingX, 0.8, -offsetZ + r * spacingZ);
+            dummy.scale.set(2.4, 0.1, 1.6);
             dummy.rotation.set(0.5, 0, 0); // Inclinado para o sol
             dummy.updateMatrix();
             imesh.setMatrixAt(i++, dummy.matrix);
@@ -1249,10 +1284,10 @@ function createSolarFarm(block) {
     const supportMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.concrete, panelCount);
     supportMesh.matrixAutoUpdate = false;
     i = 0;
-    for (let r=0; r<8; r++) {
-        for (let c=0; c<8; c++) {
-            dummy.position.set(block.x - 7 + c*2.0, 0.4, block.z - 7 + r*2.0);
-            dummy.scale.set(0.1, 0.8, 0.1);
+    for (let r=0; r<rows; r++) {
+        for (let c=0; c<cols; c++) {
+            dummy.position.set(-offsetX + c * spacingX, 0.4, -offsetZ + r * spacingZ);
+            dummy.scale.set(0.15, 0.8, 0.15);
             dummy.rotation.set(0, 0, 0);
             dummy.updateMatrix();
             supportMesh.setMatrixAt(i++, dummy.matrix);
@@ -1262,8 +1297,11 @@ function createSolarFarm(block) {
     supportMesh.updateMatrix();
     group.add(supportMesh);
 
-    addBox({ width: 3, height: 2, depth: 3, x: block.x, y: 1, z: block.z + 8, material: materials.concrete, parent: group, cast: true, receive: true });
-    addPerimeterFence(group, block.x, block.z);
+    // Pequena estação perto dos painéis (para o redirecionamento)
+    addBox({ width: 6, height: 4, depth: 5, x: offsetX + 5, y: 2, z: 0, material: materials.concrete, parent: group, cast: true, receive: true });
+    addBox({ width: 2, height: 6, depth: 2, x: offsetX + 5, y: 3, z: -3, material: powerMats.transformer, parent: group, cast: true, receive: true });
+    
+    // Sem addPerimeterFence (livre fora da cidade)
 }
 
 const windTurbines = [];
@@ -1271,50 +1309,61 @@ const windTurbines = [];
 function createWindFarm(block) {
     const group = new THREE.Group();
     group.name = `wind_farm-${block.index}`;
-    group.matrixAutoUpdate = false;
+    group.position.set(block.x, 0, block.z);
+    group.lookAt(0, 0, 0);
     cityGroup.add(group);
 
-    for (let i=0; i<4; i++) {
-        const x = block.x - 5 + (i%2)*10;
-        const z = block.z - 5 + Math.floor(i/2)*10;
-        
-        // Torres altas, brancas e elegantes
-        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.5, 35, 12), materials.whiteTurbine);
-        tower.position.set(x, 17.5, z);
-        tower.castShadow = true;
-        tower.matrixAutoUpdate = false;
-        tower.updateMatrix();
-        group.add(tower);
+    const rows = 5;
+    const cols = 5;
+    const spacing = 8;
+    const offsetX = (cols * spacing) / 2;
+    const offsetZ = (rows * spacing) / 2;
 
-        const nacelle = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
-        nacelle.scale.set(1.2, 1.2, 3);
-        nacelle.position.set(x, 35, z);
-        nacelle.castShadow = true;
-        nacelle.matrixAutoUpdate = false;
-        nacelle.updateMatrix();
-        group.add(nacelle);
-
-        const rotor = new THREE.Group();
-        rotor.position.set(x, 35, z + 1.6);
-        
-        // Pás finas e elegantes
-        for (let b=0; b<3; b++) {
-            const blade = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
-            blade.scale.set(0.1, 14, 0.3); // Pás maiores e mais finas
-            blade.position.set(0, 7, 0);
-            blade.matrixAutoUpdate = false;
-            blade.updateMatrix();
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const x = -offsetX + c * spacing;
+            const z = -offsetZ + r * spacing;
             
-            const pivot = new THREE.Group();
-            pivot.rotation.z = (b * Math.PI * 2) / 3;
-            pivot.add(blade);
-            rotor.add(pivot);
+            // Torres brancas (porém menores que antes, como solicitado)
+            const towerHeight = 18;
+            const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.3, towerHeight, 12), materials.whiteTurbine);
+            tower.position.set(x, towerHeight / 2, z);
+            tower.castShadow = true;
+            tower.matrixAutoUpdate = false;
+            tower.updateMatrix();
+            group.add(tower);
+
+            const nacelle = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
+            nacelle.scale.set(0.8, 0.8, 2);
+            nacelle.position.set(x, towerHeight, z);
+            nacelle.castShadow = true;
+            nacelle.matrixAutoUpdate = false;
+            nacelle.updateMatrix();
+            group.add(nacelle);
+
+            const rotor = new THREE.Group();
+            rotor.position.set(x, towerHeight, z + 1.1);
+            
+            // Pás menores
+            for (let b=0; b<3; b++) {
+                const blade = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
+                blade.scale.set(0.08, 7, 0.2); 
+                blade.position.set(0, 3.5, 0);
+                blade.matrixAutoUpdate = false;
+                blade.updateMatrix();
+                
+                const pivot = new THREE.Group();
+                pivot.rotation.z = (b * Math.PI * 2) / 3;
+                pivot.add(blade);
+                rotor.add(pivot);
+            }
+            group.add(rotor);
+            windTurbines.push(rotor);
         }
-        group.add(rotor);
-        windTurbines.push(rotor);
     }
     
-    addBox({ width: 4, height: 2.5, depth: 3, x: block.x, y: 1.25, z: block.z + 8, material: materials.industryWall, parent: group, cast: true, receive: true });
+    // Base/subestação da fazenda eólica
+    addBox({ width: 4, height: 2.5, depth: 3, x: 0, y: 1.25, z: offsetZ + 5, material: materials.industryWall, parent: group, cast: true, receive: true });
 }
 
 function createSubstation(block) {
@@ -1811,6 +1860,7 @@ function createTransmissionLines() {
 
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
             const line = new THREE.Line(geometry, powerMats.wireGlowing);
+            line.computeLineDistances();
             line.userData = { 
                 originalMat: powerMats.wireGlowing, 
                 blackoutMat: powerMats.wireBlackout, 
@@ -2213,17 +2263,25 @@ function syncSceneWithBackend(grafo, estado, logs) {
                     if (typeof vfxManager !== 'undefined') vfxManager.createSparks(center);
                 }
                 linha.userData.broken = true;
+            } else if (edge.is_contingencia) {
+                linha.material = powerMats.wireHealing;
+                const direcao = edge.fluxo_kw_atual < 0 ? -1 : 1;
+                linha.userData.currentSpeed = 15.0 * direcao;
+                linha.userData.broken = false;
             } else if (taxaCarga >= 0.95) {
                 linha.material = powerMats.wireCritical; // Vermelho
-                linha.userData.currentSpeed = 15.0;      // 3x mais rápido
+                const direcao = edge.fluxo_kw_atual < 0 ? -1 : 1;
+                linha.userData.currentSpeed = 20.0 * direcao;      // 3x mais rápido
                 linha.userData.broken = false;
             } else if (taxaCarga >= 0.85) {
                 linha.material = powerMats.wireOverload; // Laranja
-                linha.userData.currentSpeed = 10.0;      // 2x mais rápido
+                const direcao = edge.fluxo_kw_atual < 0 ? -1 : 1;
+                linha.userData.currentSpeed = 10.0 * direcao;      // 2x mais rápido
                 linha.userData.broken = false;
             } else {
                 linha.material = powerMats.wireGlowing;  // Azul neon
-                linha.userData.currentSpeed = 5.0;       // Velocidade normal
+                const direcao = edge.fluxo_kw_atual < 0 ? -1 : 1;
+                linha.userData.currentSpeed = 5.0 * direcao;       // Velocidade normal
                 linha.userData.broken = false;
             }
         }

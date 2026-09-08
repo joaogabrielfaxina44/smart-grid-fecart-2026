@@ -107,6 +107,11 @@ export class CityGraph {
         console.log(`\n[Self-Healing] ⚡ ROMPIMENTO DE ARESTA: ${origemId} <-> ${destinoId}`);
         this.desativarAresta(origemId, destinoId);
 
+        // Limpa contingencias antigas
+        for (const edge of this.arestas.values()) {
+            edge.is_contingencia = false;
+        }
+
         const desenergizados = this.nosDesenergizados();
         const logs = [];
 
@@ -126,6 +131,11 @@ export class CityGraph {
             if (rota) {
                 if (node) node.status_energizado = true;
                 logs.push(`[Self-Healing] ✅ Rota de contingência Dijkstra encontrada para ${nodeId}: ${rota.join(' → ')}`);
+                // Marca arestas da rota
+                for (let i = 0; i < rota.length - 1; i++) {
+                    const edge = this.getEdge(rota[i], rota[i + 1]);
+                    if (edge) edge.is_contingencia = true;
+                }
             } else {
                 if (node) {
                     node.status_energizado = false;
