@@ -128,12 +128,42 @@
         <div id="hud-alert-container" style="position: absolute; top: 60px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; z-index: 100;">
         </div>
         
+
         <!-- X-Ray Tooltip -->
         <div id="xray-tooltip" class="hud-pill hidden" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 100; opacity: 0; transition: opacity 0.2s;">
             <div class="hud-item"><strong id="tooltip-title">Title</strong></div>
             <div class="hud-divider"></div>
             <div class="hud-item" id="tooltip-desc">Desc</div>
         </div>
+        
+        <!-- VISUAL NOVEL UI -->
+        <div id="vn-container" style="display: none; position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 800px; z-index: 200; pointer-events: auto; display: flex; align-items: flex-end; gap: 20px;">
+            <img id="vn-portrait" src="assets/characters/voltz_happy.jpg" style="width: 150px; height: 150px; object-fit: cover; border-radius: 50%; border: 4px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5);" />
+            <div style="flex: 1; background: rgba(10, 15, 30, 0.95); border: 2px solid #4da6ff; border-radius: 12px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); position: relative;">
+                <div id="vn-name" style="position: absolute; top: -15px; left: 20px; background: #1d4ed8; color: white; padding: 4px 16px; border-radius: 12px; font-weight: bold; border: 2px solid #fff;">Voltz</div>
+                <div id="vn-text" style="color: #fff; font-size: 18px; line-height: 1.5; min-height: 54px;">...</div>
+                <button id="vn-btn-next" style="position: absolute; bottom: 10px; right: 15px; background: none; border: none; color: #4da6ff; font-weight: bold; cursor: pointer; font-size: 16px;">Avançar &#x25B6;</button>
+            </div>
+        </div>
+
+        <!-- MINIGAME PANEL -->
+        <div id="minigame-container" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 25, 40, 0.95); border: 2px solid #ff4444; border-radius: 12px; padding: 30px; box-shadow: 0 0 50px rgba(255, 0, 0, 0.3); z-index: 250; color: white; text-align: center; width: 400px;">
+            <h2 style="color: #ff4444; margin-top: 0;">⚠ PAINEL DE EMERGÊNCIA</h2>
+            <p style="margin-bottom: 25px;">Redirecione a energia para salvar a cidade!</p>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;">
+                <span>🏭 Carga Industrial</span>
+                <button id="mg-btn-ind" style="background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;">CORTAR CARGA</button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;">
+                <span>☀️ Geração Distribuída</span>
+                <button id="mg-btn-sol" style="background: #444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;">ATIVAR BATERIAS</button>
+            </div>
+
+            <button id="mg-btn-resolve" disabled style="background: #444; color: #888; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; font-size: 16px; width: 100%; cursor: not-allowed; transition: all 0.3s;">ESTABILIZAR REDE</button>
+        </div>
+
     </div>
 
     <script type="importmap">

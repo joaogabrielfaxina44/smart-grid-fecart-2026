@@ -1,84 +1,163 @@
+import * as THREE from 'three';
+import { TOUR_SCRIPT } from './dialogs.js';
+
 export class StorytellingTour {
-    constructor(camera, simulator, hudAlertContainer) {
+    constructor(camera, simulator) {
         this.camera = camera;
         this.simulator = simulator;
-        this.hudAlertContainer = hudAlertContainer;
         this.isActive = false;
         this.step = 0;
-        this.timer = null;
+        this.typewriterInterval = null;
+        this.isTyping = false;
+        
+        // UI Elements
+        this.vnContainer = document.getElementById('vn-container');
+        this.vnPortrait = document.getElementById('vn-portrait');
+        this.vnName = document.getElementById('vn-name');
+        this.vnText = document.getElementById('vn-text');
+        this.btnNext = document.getElementById('vn-btn-next');
+        
+        this.minigameContainer = document.getElementById('minigame-container');
+        this.mgBtnInd = document.getElementById('mg-btn-ind');
+        this.mgBtnSol = document.getElementById('mg-btn-sol');
+        this.mgBtnResolve = document.getElementById('mg-btn-resolve');
+        
+        this.btnNext?.addEventListener('click', () => {
+            if (this.isTyping) {
+                // Skip typing
+                clearInterval(this.typewriterInterval);
+                this.vnText.innerHTML = TOUR_SCRIPT[this.step].text;
+                this.isTyping = false;
+            } else {
+                this.step++;
+                this.playCurrentStep();
+            }
+        });
 
-        // Câmera posições (exemplo genérico para os bairros, com altura boa para ver o efeito)
-        this.stops = [
-            { pos: { x: -30, y: 35, z: 20 }, msg: "1. Agente de Horário de Pico entra em ação. As luzes acendem e a demanda residencial sobe rapidamente justificando o uso de redes inteligentes." },
-            { pos: { x: 45, y: 25, z: -30 }, msg: "2. Geração Distribuída: Painéis solares começam a injetar energia limpa na rede, aliviando o estresse da Usina Central." },
-            { pos: { x: 80, y: 40, z: 50 }, msg: "3. Sobrecarga detectada! O Agente de Resposta à Demanda atua cortando energia de partes da Indústria para proteger e priorizar o Hospital." },
-            { pos: { x: 0, y: 50, z: -40 }, msg: "4. Uma tempestade rompe um cabo principal! O Agente Self-Healing calcula uma rota alternativa (Dijkstra) em milissegundos, isolando a falha." }
-        ];
+        // Minigame State
+        this.mgState = { indCut: false, solOn: false };
+        
+        this.mgBtnInd?.addEventListener('click', () => {
+            this.mgState.indCut = true;
+            this.mgBtnInd.style.background = '#444';
+            this.mgBtnInd.innerText = 'CARGA CORTADA';
+            this.mgBtnInd.disabled = true;
+            this.checkMinigame();
+        });
+        
+        this.mgBtnSol?.addEventListener('click', () => {
+            this.mgState.solOn = true;
+            this.mgBtnSol.style.background = '#444';
+            this.mgBtnSol.innerText = 'BATERIAS ATIVAS';
+            this.mgBtnSol.disabled = true;
+            this.checkMinigame();
+        });
+        
+        this.mgBtnResolve?.addEventListener('click', () => {
+            this.minigameContainer.style.display = 'none';
+            this.step++;
+            this.playCurrentStep();
+        });
     }
 
     start() {
         if (this.isActive) return;
         this.isActive = true;
         this.step = 0;
-        this.nextStep();
+        this.vnContainer.style.display = 'flex';
+        this.playCurrentStep();
     }
 
     stop() {
         this.isActive = false;
-        clearTimeout(this.timer);
-        if (this.hudAlertContainer) {
-            this.hudAlertContainer.innerHTML = '';
-        }
+        this.vnContainer.style.display = 'none';
+        this.minigameContainer.style.display = 'none';
+        clearInterval(this.typewriterInterval);
     }
 
-    nextStep() {
-        if (!this.isActive || this.step >= this.stops.length) {
+    playCurrentStep() {
+        if (!this.isActive || this.step >= TOUR_SCRIPT.length) {
             this.stop();
-            // Reset no fim
             document.getElementById('btn-reset')?.click();
             return;
         }
 
-        const currentStop = this.stops[this.step];
+        const scriptData = TOUR_SCRIPT[this.step];
         
-        // Exibir Legenda
-        if (this.hudAlertContainer) {
-            this.hudAlertContainer.innerHTML = '';
-            const dialog = document.createElement('div');
-            dialog.className = 'hud-pill';
-            dialog.style.backgroundColor = 'rgba(20, 20, 30, 0.9)';
-            dialog.style.color = '#fff';
-            dialog.style.padding = '15px';
-            dialog.style.fontSize = '16px';
-            dialog.style.maxWidth = '400px';
-            dialog.style.textAlign = 'center';
-            dialog.style.border = '1px solid #4da6ff';
-            dialog.innerHTML = `<strong>Tour Guiada:</strong><br><br>${currentStop.msg}`;
-            this.hudAlertContainer.appendChild(dialog);
-        }
+        // Update UI
+        this.vnName.innerText = scriptData.speaker;
+        this.vnName.style.background = scriptData.speaker === 'Voltz' ? '#1d4ed8' : '#d97706';
+        this.vnPortrait.src = scriptData.portrait;
+        
+        // Typewriter effect
+        this.isTyping = true;
+        this.vnText.innerHTML = '';
+        let charIndex = 0;
+        clearInterval(this.typewriterInterval);
+        
+        this.typewriterInterval = setInterval(() => {
+            this.vnText.innerHTML += scriptData.text.charAt(charIndex);
+            charIndex++;
+            if (charIndex >= scriptData.text.length) {
+                clearInterval(this.typewriterInterval);
+                this.isTyping = false;
+            }
+        }, 30);
 
-        // Voar Câmera (Isso deve integrar com a função smoothGlideTo do main.js)
-        if (window.smoothGlideTo) {
-            // Requer que a pos seja um THREE.Vector3
-            window.smoothGlideTo(currentStop.pos);
-        } else {
-            // Fallback se smoothGlideTo não estiver exposto
-            this.camera.position.set(currentStop.pos.x, currentStop.pos.y, currentStop.pos.z);
-        }
+        // Process Actions
+        this.processAction(scriptData.action);
+    }
 
-        // Disparar Ações Específicas do Passo
-        if (this.step === 0) {
-            document.getElementById('btn-forcar-noite')?.click();
-        } else if (this.step === 1) {
-            // Volta pro dia pra ver o sol
+    processAction(action) {
+        if (!window.smoothGlideTo) return;
+        
+        if (action === 'look_center') {
             document.getElementById('btn-reset')?.click();
-        } else if (this.step === 2) {
-            document.getElementById('btn-sobrecarga')?.click();
-        } else if (this.step === 3) {
+            window.smoothGlideTo(new THREE.Vector3(0, 50, 40));
+        } else if (action === 'look_city') {
+            window.smoothGlideTo(new THREE.Vector3(45, 25, -30));
+        } else if (action === 'look_solar') {
+            window.smoothGlideTo(new THREE.Vector3(80, 40, 50));
+        } else if (action === 'force_night') {
+            document.getElementById('btn-forcar-noite')?.click();
+        } else if (action === 'break_line') {
             document.getElementById('btn-falha-usina')?.click();
+            window.smoothGlideTo(new THREE.Vector3(0, 60, 0));
+        } else if (action === 'shake_camera') {
+            // Optional: call VFX manager to shake if global
+        } else if (action === 'start_minigame') {
+            this.vnContainer.style.display = 'none'; // Esconde dialogo
+            this.minigameContainer.style.display = 'block';
+            
+            // Reset minigame buttons
+            this.mgState = { indCut: false, solOn: false };
+            this.mgBtnInd.disabled = false;
+            this.mgBtnInd.style.background = '#ff4444';
+            this.mgBtnInd.innerText = 'CORTAR CARGA';
+            
+            this.mgBtnSol.disabled = false;
+            this.mgBtnSol.style.background = '#eab308';
+            this.mgBtnSol.innerText = 'ATIVAR BATERIAS';
+            
+            this.mgBtnResolve.disabled = true;
+            this.mgBtnResolve.style.background = '#444';
+            this.mgBtnResolve.style.color = '#888';
+            this.mgBtnResolve.style.cursor = 'not-allowed';
+        } else if (action === 'restore_power') {
+            this.vnContainer.style.display = 'flex';
+            document.getElementById('btn-reset')?.click();
+            window.smoothGlideTo(new THREE.Vector3(20, 40, 30));
+        } else if (action === 'end_tour') {
+            // Final step, nothing special
         }
+    }
 
-        this.step++;
-        this.timer = setTimeout(() => this.nextStep(), 10000); // 10 segundos por parada
+    checkMinigame() {
+        if (this.mgState.indCut && this.mgState.solOn) {
+            this.mgBtnResolve.disabled = false;
+            this.mgBtnResolve.style.background = '#22c55e'; // Green
+            this.mgBtnResolve.style.color = '#fff';
+            this.mgBtnResolve.style.cursor = 'pointer';
+        }
     }
 }
