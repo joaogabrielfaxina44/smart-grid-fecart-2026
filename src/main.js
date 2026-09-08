@@ -613,27 +613,6 @@ function addRooftopDetails(parent, x, z, w, d, h, seed) {
         });
     }
 }
-    if (n2 > 0.35) {
-        acUnitInstancesData.push({
-            x: x - w * 0.15,
-            y: h + 0.22,
-            z: z + d * 0.1,
-            w: 0.9 + n2 * 0.5,
-            h: 0.45,
-            d: 0.6 + n2 * 0.35
-        });
-    }
-    if (noise(seed, 2, 562) > 0.6) {
-        antennaInstancesData.push({
-            x: x + w * 0.25,
-            y: h + 0.7,
-            z: z + d * 0.22,
-            w: 0.06,
-            h: 1.4,
-            d: 0.06
-        });
-    }
-}
 
 function addBalconies(parent, x, z, w, d, h, seed, count) {
     const bw = 1.4 + noise(seed, 0, 570) * 0.7;
