@@ -250,7 +250,7 @@ const materials = {
     roofConcrete: new THREE.MeshStandardMaterial({ color: 0x858a86, roughness: 0.88 }),
     roofTerracotta: new THREE.MeshStandardMaterial({ color: 0x9d5b3f, roughness: 0.9 }),
     hospitalWhite: new THREE.MeshStandardMaterial({ color: 0xe6e8e3, roughness: 0.72 }),
-    hospitalRed: new THREE.MeshStandardMaterial({ color: 0xb32e2a, roughness: 0.58 }),
+    hospitalRed: new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.58 }),
     concrete: new THREE.MeshStandardMaterial({ color: 0xa9aaa4, roughness: 0.76 }),
     industryWall: new THREE.MeshStandardMaterial({ color: 0x9c9688, roughness: 0.86 }),
     industryRoof: new THREE.MeshStandardMaterial({ color: 0x6e7778, roughness: 0.78 }),
@@ -291,7 +291,7 @@ const powerMats = {
         emissiveIntensity: 0.0
     }),
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
-    wireGlowing: new THREE.LineDashedMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, linewidth: 2, dashSize: 4, gapSize: 2 }),
+    wireGlowing: new THREE.LineDashedMaterial({ color: 0x38bdf8, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 6, gapSize: 2 }),
     wireOverload: new THREE.LineDashedMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2, dashSize: 4, gapSize: 2 }),
     wireCritical: new THREE.LineDashedMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, linewidth: 2.5, dashSize: 4, gapSize: 2 }),
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
@@ -615,14 +615,14 @@ function addRooftopDetails(parent, x, z, w, d, h, seed) {
             d: 0.06
         });
     }
-    if (noise(seed, 3, 563) > 0.45) { // Microgeração distribuída sutil
+    if (noise(seed, 3, 563) > 0.15) { // Microgeração distribuída mais frequente (smart grid)
         microSolarInstancesData.push({
             x: x,
             y: h + 0.1,
             z: z + d * 0.2,
-            w: Math.min(w * 0.4, 2.5),
+            w: Math.min(w * 0.6, 3.5),
             h: 0.05,
-            d: Math.min(d * 0.4, 1.5),
+            d: Math.min(d * 0.6, 2.5),
             rotX: 0.35 // Inclinado para o sol
         });
     }
@@ -830,11 +830,19 @@ function getBlockType(row, col) {
     if (row === GRID_RADIUS + 3 && col === GRID_RADIUS - 2) return 'park';
 
     const industrialEdge = row > GRID_RADIUS + 3 && col > GRID_RADIUS + 1;
-    if (industrialEdge) return n > 0.7 ? 'mixed' : 'industrial';
+    if (industrialEdge) return n > 0.6 ? 'mixed' : 'industrial';
 
-    if (distance < 2.2) return n > 0.2 ? 'commercial' : 'mixed';
-    if (distance < 4.5) return n > 0.3 ? 'mixed' : 'commercial';
-    return n > 0.65 ? 'mixed' : 'residential';
+    // Zoning rings
+    if (distance <= 2.5) {
+        // Core center
+        return n > 0.15 ? 'commercial' : 'mixed';
+    } else if (distance <= 5.0) {
+        // Inner ring
+        return n > 0.4 ? 'mixed' : (n > 0.8 ? 'commercial' : 'residential');
+    } else {
+        // Outskirts
+        return n > 0.8 ? 'mixed' : 'residential';
+    }
 }
 
 const backendNodePositions = {};
@@ -999,16 +1007,44 @@ function createCommercialBlock(block) {
     cityGroup.add(group);
 
     const distance = Math.hypot(block.row - GRID_RADIUS, block.col - GRID_RADIUS);
-    const towerLots = [
-        [-6.5, -6.5], [6.5, -6.5], [-6.5, 6.5], [6.5, 6.5], [0, 0]
-    ];
-    const towerCount = distance < 2.0 ? 5 : 4;
+    const nLayout = noise(block.row, block.col, 900);
+    
+    if (nLayout < 0.3) {
+        // Layout 1: Central massive tower + corner plazas
+        const height = (distance < 2.0 ? 45 : 35) + noise(block.index, 1, 1) * 40;
+        createOfficeTower(group, block.x, block.z, block.index, height, block.index);
+        
+        // Plazas / small elements
+        if (noise(block.index, 2, 2) > 0.5) createShopHouse(group, block.x - 6.5, block.z - 6.5, block.index+1, 1, block.index);
+        if (noise(block.index, 3, 3) > 0.5) createShopHouse(group, block.x + 6.5, block.z + 6.5, block.index+2, 1, block.index);
+        
+        createStreetTrees(block.x, block.z, 3);
+    } else if (nLayout < 0.6) {
+        // Layout 2: Two large twin towers side-by-side
+        const height1 = (distance < 2.0 ? 30 : 25) + noise(block.index, 4, 4) * 35;
+        const height2 = (distance < 2.0 ? 30 : 25) + noise(block.index, 5, 5) * 35;
+        
+        // Orientation
+        if (noise(block.index, 6, 6) > 0.5) {
+            createOfficeTower(group, block.x - 4.5, block.z, block.index + 10, height1, block.index);
+            createOfficeTower(group, block.x + 4.5, block.z, block.index + 11, height2, block.index);
+        } else {
+            createOfficeTower(group, block.x, block.z - 4.5, block.index + 12, height1, block.index);
+            createOfficeTower(group, block.x, block.z + 4.5, block.index + 13, height2, block.index);
+        }
+    } else {
+        // Layout 3: 4 or 5 corner towers (classic dense)
+        const towerLots = [
+            [-6.5, -6.5], [6.5, -6.5], [-6.5, 6.5], [6.5, 6.5], [0, 0]
+        ];
+        const towerCount = distance < 2.0 ? 5 : 4;
 
-    for (let i = 0; i < towerCount; i += 1) {
-        const [lx, lz] = towerLots[i];
-        const n = noise(block.row + i, block.col, 21);
-        const height = (distance < 2.0 ? 36 : 24) + n * (distance < 2.0 ? 54 : 38);
-        createOfficeTower(group, block.x + lx, block.z + lz, block.index + i, height, block.index);
+        for (let i = 0; i < towerCount; i += 1) {
+            const [lx, lz] = towerLots[i];
+            const n = noise(block.row + i, block.col, 21);
+            const height = (distance < 2.0 ? 36 : 24) + n * (distance < 2.0 ? 54 : 38);
+            createOfficeTower(group, block.x + lx, block.z + lz, block.index + i, height, block.index);
+        }
     }
 }
 
@@ -1084,21 +1120,55 @@ function createSmallApartment(parent, x, z, seed, height, blockIndex = 0) {
 }
 
 function createOfficeTower(parent, x, z, seed, height, blockIndex = 0) {
-    const width = 5.2 + noise(seed, seed + 16, 70) * 3.8;
-    const depth = 5.2 + noise(seed, seed + 17, 71) * 3.9;
+    const towerType = Math.floor(noise(seed, seed + 16, 70) * 4); // 0, 1, 2, 3
     const materialRoll = noise(seed, seed + 18, 72);
     const facadeType = materialRoll > 0.4 ? 'glass' : 'office';
 
-    addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, blockIndex });
-
-    if (noise(seed, seed + 19, 73) > 0.58) {
-        addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent, cast: false, receive: true });
-    }
-
-    addRooftopDetails(parent, x, z, width, depth, height, seed);
-
-    if (noise(seed, seed + 20, 74) > 0.4) {
-        addEntranceCanopy(parent, x, z, Math.min(3.5, width * 0.6), depth);
+    if (towerType === 0) {
+        // Normal Box Tower
+        const width = 5.2 + noise(seed, 1, 1) * 3.8;
+        const depth = 5.2 + noise(seed, 2, 2) * 3.9;
+        addBuildingWithFacade({ width, height, depth, x, z, seed, type: facadeType, parent, blockIndex });
+        if (noise(seed, seed + 19, 73) > 0.58) {
+            addBox({ width: width * 0.7, height: 1.2, depth: depth * 0.68, x, y: height + 0.6, z, material: materials.concrete, parent, cast: false, receive: true });
+        }
+        addRooftopDetails(parent, x, z, width, depth, height, seed);
+        if (noise(seed, seed + 20, 74) > 0.4) {
+            addEntranceCanopy(parent, x, z, Math.min(3.5, width * 0.6), depth);
+        }
+    } else if (towerType === 1) {
+        // Podium + Tower
+        const podW = 7.5 + noise(seed, 1, 1) * 2;
+        const podD = 7.5 + noise(seed, 2, 2) * 2;
+        const podH = 4 + noise(seed, 3, 3) * 3;
+        addBuildingWithFacade({ width: podW, height: podH, depth: podD, x, z, seed, type: 'shop', parent, blockIndex });
+        
+        const towW = podW * 0.55;
+        const towD = podD * 0.55;
+        addBuildingWithFacade({ width: towW, height: height, depth: towD, x: x - podW/2 + towW/2 + 0.5, z: z - podD/2 + towD/2 + 0.5, seed: seed+1, type: facadeType, parent, blockIndex });
+        addRooftopDetails(parent, x - podW/2 + towW/2 + 0.5, z - podD/2 + towD/2 + 0.5, towW, towD, height, seed);
+        addEntranceCanopy(parent, x, z, Math.min(3.5, podW * 0.6), podD);
+    } else if (towerType === 2) {
+        // Tiered / Step back
+        const baseW = 6.5 + noise(seed, 1, 1) * 2.5;
+        const baseD = 6.5 + noise(seed, 2, 2) * 2.5;
+        const h1 = height * 0.4;
+        const h2 = height * 0.75;
+        addBuildingWithFacade({ width: baseW, height: h1, depth: baseD, x, z, seed, type: facadeType, parent, blockIndex });
+        addBuildingWithFacade({ width: baseW * 0.75, height: h2, depth: baseD * 0.75, x, z, seed: seed+1, type: facadeType, parent, blockIndex });
+        addBuildingWithFacade({ width: baseW * 0.5, height: height, depth: baseD * 0.5, x, z, seed: seed+2, type: facadeType, parent, blockIndex });
+        addRooftopDetails(parent, x, z, baseW * 0.5, baseD * 0.5, height, seed);
+        if (noise(seed, 3, 3) > 0.4) addEntranceCanopy(parent, x, z, Math.min(3.5, baseW * 0.6), baseD);
+    } else {
+        // Twin connected towers (H-shape or similar)
+        const w1 = 3.5 + noise(seed, 1, 1) * 1.5;
+        const d1 = 7.0 + noise(seed, 2, 2) * 2;
+        addBuildingWithFacade({ width: w1, height: height, depth: d1, x: x - 2.5, z, seed, type: facadeType, parent, blockIndex });
+        addBuildingWithFacade({ width: w1, height: height * 0.85, depth: d1, x: x + 2.5, z, seed: seed+1, type: facadeType, parent, blockIndex });
+        addBuildingWithFacade({ width: 5, height: height * 0.5, depth: d1 * 0.4, x, z, seed: seed+2, type: 'glass', parent, blockIndex }); // Bridge
+        addRooftopDetails(parent, x - 2.5, z, w1, d1, height, seed);
+        addRooftopDetails(parent, x + 2.5, z, w1, d1, height * 0.85, seed + 1);
+        addEntranceCanopy(parent, x, z, 4, d1);
     }
 
     cityStats.towers += 1;
@@ -1107,27 +1177,31 @@ function createOfficeTower(parent, x, z, seed, height, blockIndex = 0) {
 function createHospital(block) {
     const group = new THREE.Group();
     group.name = `hospital-${block.index}`;
+    // Definimos a posicao base do grupo para block.x e block.z
+    // Assim, os addBox locais devem usar x relativas a 0, 0
+    group.position.set(block.x, 0, block.z);
     group.matrixAutoUpdate = false;
     cityGroup.add(group);
 
-    addBox({ width: 16.5, height: 6.5, depth: 13.5, x: block.x, z: block.z, material: materials.hospitalWhite, parent: group, cast: true, receive: true });
-    addBox({ width: 7.8, height: 5.2, depth: 17.5, x: block.x - 4.5, y: 2.6, z: block.z, material: materials.hospitalWhite, parent: group, cast: true, receive: true });
-    addBox({ width: 5.8, height: 8.8, depth: 7.2, x: block.x + 5.5, y: 4.4, z: block.z - 2.8, material: materials.concrete, parent: group, cast: true, receive: true });
-    addBox({ width: 1.2, height: 0.08, depth: 6.5, x: block.x, y: 6.62, z: block.z, material: materials.hospitalRed, parent: group, cast: false, receive: false });
-    addBox({ width: 6.5, height: 0.08, depth: 1.2, x: block.x, y: 6.64, z: block.z, material: materials.hospitalRed, parent: group, cast: false, receive: false });
+    // Passo 1: Geometria Base Apenas (Sem cores ou texturas)
+    const geoMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.8 }); // Cinza claro base
 
-    const helipad = new THREE.Mesh(
-        new THREE.CylinderGeometry(3.2, 3.2, 0.08, 24),
-        new THREE.MeshStandardMaterial({ color: 0x50565a, roughness: 0.74 })
-    );
-    helipad.position.set(block.x + 5.5, 8.88, block.z - 2.8);
-    helipad.castShadow = false;
-    helipad.receiveShadow = true;
-    helipad.matrixAutoUpdate = false;
-    helipad.updateMatrix();
-    group.add(helipad);
+    // 1. Anexo (Pronto Socorro) - Baixo e Largo na frente (z positivo)
+    // Usamos coordenadas relativas a 0
+    addBox({ width: 14, height: 6, depth: 8, x: 0, y: 3, z: 5, material: geoMat, parent: group, cast: true, receive: true });
 
-    cityStats.hospitals += 1;
+    // 2. Torre Principal (Leitos) - Alta e Estreita atras (z negativo)
+    addBox({ width: 8, height: 28, depth: 8, x: 0, y: 14, z: -3, material: geoMat, parent: group, cast: true, receive: true });
+
+    // 3. Marquise de Entrada - Laje fina
+    addBox({ width: 6, height: 0.4, depth: 4, x: 0, y: 3.5, z: 11, material: geoMat, parent: group, cast: true, receive: true });
+
+    // Pilares da Marquise
+    addBox({ width: 0.4, height: 3.5, depth: 0.4, x: -2.5, y: 1.75, z: 12.5, material: geoMat, parent: group, cast: true, receive: true });
+    addBox({ width: 0.4, height: 3.5, depth: 0.4, x: 2.5, y: 1.75, z: 12.5, material: geoMat, parent: group, cast: true, receive: true });
+
+    group.userData = { isGridNode: true, active: true };
+    powerGridObjects.push(group);
 }
 
 function createIndustrialBlock(block) {
@@ -2061,11 +2135,11 @@ function syncSceneWithBackend(grafo, estado, logs) {
                     if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 1.0;
                 } else {
                     if (sceneLightState === 'night' && mat.map && mat.emissive) {
-                        mat.emissive.setHex(isHospital ? 0x44aaff : 0x555544); // Hospital glows blue
-                        mat.emissiveIntensity = isHospital ? 2.0 : 1.0;
+                        mat.emissive.setHex(0x555544); // Normal night window glow
+                        mat.emissiveIntensity = 1.0;
                     } else if (sceneLightState === 'day' && mat.emissive) {
-                        mat.emissive.setHex(isHospital ? 0x2255ff : 0x000000); // Hospital has a slight blue shield
-                        mat.emissiveIntensity = isHospital ? 0.5 : 0;
+                        mat.emissive.setHex(0x000000);
+                        mat.emissiveIntensity = 0;
                     }
                 }
             });
