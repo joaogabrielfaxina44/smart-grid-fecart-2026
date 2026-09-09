@@ -115,14 +115,16 @@ function setCameraMode(mode) {
     }
 }
 
-window.smoothGlideTo = function(pos) {
+window.smoothGlideTo = function(pos, pitch, yaw) {
     const p = new THREE.Vector3(pos.x, pos.y, pos.z);
-    smoothGlideToImpl(p);
+    smoothGlideToImpl(p, pitch, yaw);
 };
 
-function smoothGlideToImpl(pos) {
+function smoothGlideToImpl(pos, pitch, yaw) {
     isGliding = true;
     glideTargetPos = pos.clone();
+    if (pitch !== undefined) targetPitch = pitch;
+    if (yaw !== undefined) targetYaw = yaw;
     resetKeys();
 }
 
