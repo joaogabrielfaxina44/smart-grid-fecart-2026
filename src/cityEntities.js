@@ -18,6 +18,12 @@ const trafficMats = {
     carGray: new THREE.MeshStandardMaterial({ color: 0x777b7a, roughness: 0.52 }),
     carYellow: new THREE.MeshStandardMaterial({ color: 0xebae34, roughness: 0.4 }),
     repairTruck: new THREE.MeshStandardMaterial({ color: 0xffaa00, roughness: 0.6 }),
+    cargoBox: new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 }),
+    windowGlass: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.1, metalness: 0.9 }),
+    headlight: new THREE.MeshBasicMaterial({ color: 0xfffae0 }),
+    taillight: new THREE.MeshBasicMaterial({ color: 0xff2222 }),
+    bumper: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 }),
+    wheel: new THREE.MeshBasicMaterial({ color: 0x151515 }),
     personShirt1: new THREE.MeshStandardMaterial({ color: 0x3498db }),
     personShirt2: new THREE.MeshStandardMaterial({ color: 0xe74c3c }),
     personShirt3: new THREE.MeshStandardMaterial({ color: 0x2ecc71 }),
@@ -191,8 +197,8 @@ export class TrafficManager {
         this.roadWidth = roadWidth;
         this.vehicles = [];
         this.pedestrians = [];
-        this.maxVehicles = 40;
-        this.maxPedestrians = 30;
+        this.maxVehicles = 120;
+        this.maxPedestrians = 100;
         
         this.vehicleMats = [trafficMats.carRed, trafficMats.carWhite, trafficMats.carBlue, trafficMats.carGray, trafficMats.carYellow];
         this.shirtMats = [trafficMats.personShirt1, trafficMats.personShirt2, trafficMats.personShirt3];
@@ -226,52 +232,159 @@ export class TrafficManager {
 
     createVehicleMesh(type, mat) {
         const group = new THREE.Group();
-        let body;
         
         if (type === 'truck') {
-            body = new THREE.Mesh(geometries.box, mat);
-            body.scale.set(4, 1.5, 2);
-            body.position.y = 1;
+            // Cabine frontal (+X)
             const cabin = new THREE.Mesh(geometries.box, mat);
-            cabin.scale.set(1.5, 1.2, 2);
-            cabin.position.set(2, 2.3, 0);
+            cabin.scale.set(1.4, 1.4, 1.9);
+            cabin.position.set(1.3, 1.1, 0);
+            cabin.castShadow = true;
             group.add(cabin);
+
+            // Para-brisa
+            const windshield = new THREE.Mesh(geometries.box, trafficMats.windowGlass);
+            windshield.scale.set(0.1, 0.55, 1.7);
+            windshield.position.set(2.01, 1.4, 0);
+            group.add(windshield);
+
+            // Baú de Carga traseiro (-X)
+            const cargo = new THREE.Mesh(geometries.box, trafficMats.cargoBox);
+            cargo.scale.set(2.7, 1.8, 2.0);
+            cargo.position.set(-0.75, 1.3, 0);
+            cargo.castShadow = true;
+            group.add(cargo);
+
+            // Faróis (+X)
+            [-0.65, 0.65].forEach(z => {
+                const hl = new THREE.Mesh(geometries.box, trafficMats.headlight);
+                hl.scale.set(0.08, 0.22, 0.35);
+                hl.position.set(2.01, 0.7, z);
+                group.add(hl);
+            });
+
+            // Lanternas traseiras (-X)
+            [-0.75, 0.75].forEach(z => {
+                const tl = new THREE.Mesh(geometries.box, trafficMats.taillight);
+                tl.scale.set(0.08, 0.22, 0.3);
+                tl.position.set(-2.11, 0.6, z);
+                group.add(tl);
+            });
+
+            // Rodas (6 rodas: 2 na frente, 4 atrás)
+            const wheelPositions = [
+                [1.3, 0.45, 1.02], [1.3, 0.45, -1.02],
+                [-0.4, 0.45, 1.02], [-0.4, 0.45, -1.02],
+                [-1.5, 0.45, 1.02], [-1.5, 0.45, -1.02]
+            ];
+            wheelPositions.forEach(p => {
+                const w = new THREE.Mesh(geometries.cylinder, trafficMats.wheel);
+                w.scale.set(0.44, 0.22, 0.44);
+                w.rotation.x = Math.PI / 2;
+                w.position.set(...p);
+                group.add(w);
+            });
+
         } else if (type === 'suv') {
-            body = new THREE.Mesh(geometries.box, mat);
-            body.scale.set(3.8, 1.2, 1.8);
-            body.position.y = 0.8;
-            const top = new THREE.Mesh(geometries.box, mat);
-            top.scale.set(2.4, 0.8, 1.6);
-            top.position.set(-0.2, 1.8, 0);
-            group.add(top);
-        } else { 
-            body = new THREE.Mesh(geometries.box, mat);
-            body.scale.set(3.4, 0.8, 1.6);
-            body.position.y = 0.6;
-            const top = new THREE.Mesh(geometries.box, mat);
-            top.scale.set(1.6, 0.6, 1.4);
-            top.position.set(-0.2, 1.3, 0);
-            group.add(top);
+            // Chassi SUV
+            const body = new THREE.Mesh(geometries.box, mat);
+            body.scale.set(3.8, 0.8, 1.75);
+            body.position.set(0, 0.7, 0);
+            body.castShadow = true;
+            group.add(body);
+
+            // Cabine SUV
+            const cabin = new THREE.Mesh(geometries.box, mat);
+            cabin.scale.set(2.3, 0.75, 1.55);
+            cabin.position.set(-0.35, 1.45, 0);
+            cabin.castShadow = true;
+            group.add(cabin);
+
+            // Vidros SUV
+            const glass = new THREE.Mesh(geometries.box, trafficMats.windowGlass);
+            glass.scale.set(2.32, 0.62, 1.57);
+            glass.position.set(-0.35, 1.45, 0);
+            group.add(glass);
+
+            // Faróis (+X)
+            [-0.58, 0.58].forEach(z => {
+                const hl = new THREE.Mesh(geometries.box, trafficMats.headlight);
+                hl.scale.set(0.08, 0.18, 0.32);
+                hl.position.set(1.91, 0.75, z);
+                group.add(hl);
+            });
+
+            // Lanternas traseiras (-X)
+            [-0.58, 0.58].forEach(z => {
+                const tl = new THREE.Mesh(geometries.box, trafficMats.taillight);
+                tl.scale.set(0.08, 0.2, 0.3);
+                tl.position.set(-1.91, 0.75, z);
+                group.add(tl);
+            });
+
+            // 4 Rodas
+            const wheelPositions = [
+                [1.15, 0.4, 0.92], [1.15, 0.4, -0.92],
+                [-1.15, 0.4, 0.92], [-1.15, 0.4, -0.92]
+            ];
+            wheelPositions.forEach(p => {
+                const w = new THREE.Mesh(geometries.cylinder, trafficMats.wheel);
+                w.scale.set(0.42, 0.18, 0.42);
+                w.rotation.x = Math.PI / 2;
+                w.position.set(...p);
+                group.add(w);
+            });
+
+        } else {
+            // Sedan
+            // Chassi
+            const body = new THREE.Mesh(geometries.box, mat);
+            body.scale.set(3.4, 0.65, 1.6);
+            body.position.set(0, 0.55, 0);
+            body.castShadow = true;
+            group.add(body);
+
+            // Cabine (deslocada para trás para deixar o capô mais longo que o porta-malas)
+            const cabin = new THREE.Mesh(geometries.box, mat);
+            cabin.scale.set(1.7, 0.6, 1.35);
+            cabin.position.set(-0.2, 1.15, 0);
+            cabin.castShadow = true;
+            group.add(cabin);
+
+            // Vidros Sedan
+            const glass = new THREE.Mesh(geometries.box, trafficMats.windowGlass);
+            glass.scale.set(1.72, 0.5, 1.37);
+            glass.position.set(-0.2, 1.15, 0);
+            group.add(glass);
+
+            // Faróis (+X)
+            [-0.52, 0.52].forEach(z => {
+                const hl = new THREE.Mesh(geometries.box, trafficMats.headlight);
+                hl.scale.set(0.08, 0.16, 0.28);
+                hl.position.set(1.71, 0.58, z);
+                group.add(hl);
+            });
+
+            // Lanternas traseiras (-X)
+            [-0.52, 0.52].forEach(z => {
+                const tl = new THREE.Mesh(geometries.box, trafficMats.taillight);
+                tl.scale.set(0.08, 0.16, 0.28);
+                tl.position.set(-1.71, 0.58, z);
+                group.add(tl);
+            });
+
+            // 4 Rodas
+            const wheelPositions = [
+                [1.05, 0.35, 0.84], [1.05, 0.35, -0.84],
+                [-1.05, 0.35, 0.84], [-1.05, 0.35, -0.84]
+            ];
+            wheelPositions.forEach(p => {
+                const w = new THREE.Mesh(geometries.cylinder, trafficMats.wheel);
+                w.scale.set(0.36, 0.16, 0.36);
+                w.rotation.x = Math.PI / 2;
+                w.position.set(...p);
+                group.add(w);
+            });
         }
-        
-        body.castShadow = true;
-        group.add(body);
-        
-        const wheelMat = new THREE.MeshBasicMaterial({color: 0x111111});
-        const wx = type === 'truck' ? 1.5 : 1.0;
-        const wz = type === 'truck' ? 1.1 : 0.9;
-        const wy = 0.4;
-        
-        const positions = [
-            [wx, wy, wz], [wx, wy, -wz], [-wx, wy, wz], [-wx, wy, -wz]
-        ];
-        positions.forEach(p => {
-            const w = new THREE.Mesh(geometries.cylinder, wheelMat);
-            w.scale.set(0.4, 0.2, 0.4);
-            w.rotation.x = Math.PI/2;
-            w.position.set(...p);
-            group.add(w);
-        });
         
         return group;
     }
@@ -286,7 +399,8 @@ export class TrafficManager {
         
         mesh.position.copy(pos);
         
-        const angle = Math.atan2(dir.x, dir.z);
+        // Frente do veículo está no eixo +X, então a rotação correta é atan2(-dir.z, dir.x)
+        const angle = Math.atan2(-dir.z, dir.x);
         mesh.rotation.y = angle;
         
         this.scene.add(mesh);
@@ -294,7 +408,7 @@ export class TrafficManager {
         this.vehicles.push({
             mesh,
             dir,
-            speed: 8 + Math.random() * 6
+            speed: 10 + Math.random() * 8
         });
     }
 
@@ -341,27 +455,29 @@ export class TrafficManager {
     }
 
     update(delta) {
-        const bounds = 200;
+        const bounds = 250;
         
         this.vehicles.forEach(v => {
             v.mesh.position.addScaledVector(v.dir, v.speed * delta);
             
-            if (v.mesh.position.x > bounds) v.mesh.position.x = -bounds;
-            if (v.mesh.position.x < -bounds) v.mesh.position.x = bounds;
-            if (v.mesh.position.z > bounds) v.mesh.position.z = -bounds;
-            if (v.mesh.position.z < -bounds) v.mesh.position.z = bounds;
+            if (v.dir.x > 0 && v.mesh.position.x > bounds) v.mesh.position.x = -bounds;
+            else if (v.dir.x < 0 && v.mesh.position.x < -bounds) v.mesh.position.x = bounds;
+            
+            if (v.dir.z > 0 && v.mesh.position.z > bounds) v.mesh.position.z = -bounds;
+            else if (v.dir.z < 0 && v.mesh.position.z < -bounds) v.mesh.position.z = bounds;
         });
         
         this.pedestrians.forEach(p => {
             p.mesh.position.addScaledVector(p.dir, p.speed * delta);
             p.animTime += delta * p.speed * 4;
             
-            p.mesh.position.y = Math.abs(Math.sin(p.animTime)) * 0.1;
+            p.mesh.position.y = Math.abs(Math.sin(p.animTime)) * 0.08;
             
-            if (p.mesh.position.x > bounds) p.mesh.position.x = -bounds;
-            if (p.mesh.position.x < -bounds) p.mesh.position.x = bounds;
-            if (p.mesh.position.z > bounds) p.mesh.position.z = -bounds;
-            if (p.mesh.position.z < -bounds) p.mesh.position.z = bounds;
+            if (p.dir.x > 0 && p.mesh.position.x > bounds) p.mesh.position.x = -bounds;
+            else if (p.dir.x < 0 && p.mesh.position.x < -bounds) p.mesh.position.x = bounds;
+            
+            if (p.dir.z > 0 && p.mesh.position.z > bounds) p.mesh.position.z = -bounds;
+            else if (p.dir.z < 0 && p.mesh.position.z < -bounds) p.mesh.position.z = bounds;
         });
     }
 }
@@ -381,28 +497,55 @@ export class RepairManager {
         const group = new THREE.Group();
         const mat = trafficMats.repairTruck;
         
+        // Chassi
         const body = new THREE.Mesh(geometries.box, mat);
-        body.scale.set(2.8, 1.2, 1.6);
-        body.position.y = 0.8;
+        body.scale.set(3.2, 1.1, 1.7);
+        body.position.set(0, 0.75, 0);
+        body.castShadow = true;
         group.add(body);
         
+        // Cabine (+X)
         const cabin = new THREE.Mesh(geometries.box, mat);
-        cabin.scale.set(1.2, 1.0, 1.6);
-        cabin.position.set(1.4, 1.8, 0);
+        cabin.scale.set(1.3, 1.2, 1.6);
+        cabin.position.set(1.0, 1.8, 0);
+        cabin.castShadow = true;
         group.add(cabin);
+
+        // Vidro Cabine
+        const glass = new THREE.Mesh(geometries.box, trafficMats.windowGlass);
+        glass.scale.set(0.1, 0.6, 1.4);
+        glass.position.set(1.66, 1.8, 0);
+        group.add(glass);
         
+        // Giroflex no teto
         const siren = new THREE.Mesh(geometries.box, new THREE.MeshBasicMaterial({color: 0xff0000}));
-        siren.scale.set(0.2, 0.2, 0.8);
-        siren.position.set(1.4, 2.4, 0);
+        siren.scale.set(0.3, 0.25, 0.8);
+        siren.position.set(1.0, 2.5, 0);
         group.add(siren);
         group.userData.siren = siren;
+
+        // Faróis (+X)
+        [-0.55, 0.55].forEach(z => {
+            const hl = new THREE.Mesh(geometries.box, trafficMats.headlight);
+            hl.scale.set(0.08, 0.2, 0.3);
+            hl.position.set(1.61, 0.8, z);
+            group.add(hl);
+        });
+
+        // Lanternas (-X)
+        [-0.55, 0.55].forEach(z => {
+            const tl = new THREE.Mesh(geometries.box, trafficMats.taillight);
+            tl.scale.set(0.08, 0.2, 0.3);
+            tl.position.set(-1.61, 0.8, z);
+            group.add(tl);
+        });
         
-        const wheelMat = new THREE.MeshBasicMaterial({color: 0x111111});
-        const positions = [[1.2, 0.4, 0.9], [1.2, 0.4, -0.9], [-1.0, 0.4, 0.9], [-1.0, 0.4, -0.9]];
+        // Rodas
+        const positions = [[1.0, 0.45, 0.92], [1.0, 0.45, -0.92], [-1.0, 0.45, 0.92], [-1.0, 0.45, -0.92]];
         positions.forEach(p => {
-            const w = new THREE.Mesh(geometries.cylinder, wheelMat);
-            w.scale.set(0.4, 0.2, 0.4);
-            w.rotation.x = Math.PI/2;
+            const w = new THREE.Mesh(geometries.cylinder, trafficMats.wheel);
+            w.scale.set(0.44, 0.2, 0.44);
+            w.rotation.x = Math.PI / 2;
             w.position.set(...p);
             group.add(w);
         });
@@ -472,7 +615,7 @@ export class RepairManager {
                 } else {
                     dir.normalize();
                     t.mesh.position.addScaledVector(dir, 15 * delta);
-                    t.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+                    t.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
                 }
             } else if (t.state === 'repairing') {
                 t.timer -= delta;
@@ -495,7 +638,7 @@ export class RepairManager {
                 } else {
                     dir.normalize();
                     t.mesh.position.addScaledVector(dir, 15 * delta);
-                    t.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+                    t.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
                 }
             }
         }
