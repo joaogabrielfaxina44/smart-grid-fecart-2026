@@ -73,6 +73,10 @@ export class PoleManager {
         ctx.fillRect(0, 0, size, size);
         this.groundLightPoolTexture = new THREE.CanvasTexture(canvas);
         this.groundLightPoolTexture.colorSpace = THREE.SRGBColorSpace;
+        
+        // OPTIMIZATION 1: Reutilizar a mesma geometria para todos os pools de luz (evita memory leak e travamentos)
+        this.poolGeo = new THREE.PlaneGeometry(16, 16);
+        this.frameCount = 0;
     }
 
     addPole(x, z, angleRad, options = {}) {
@@ -144,13 +148,14 @@ export class PoleManager {
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
-            const poolGeo = new THREE.PlaneGeometry(16, 16);
-            const pool = new THREE.Mesh(poolGeo, poolMat);
+            const pool = new THREE.Mesh(this.poolGeo, poolMat);
             pool.rotation.x = -Math.PI / 2;
             pool.position.set(0, 0.06, -1.6); // Under the bulb
+            pool.visible = false; // OPTIMIZATION 3: Inicialmente invisível
             poleGroup.add(pool);
             
             poleGroup.userData.poolMat = poolMat;
+            poleGroup.userData.poolMesh = pool;
         }
 
         // Alert Triangle (Hidden by default)
@@ -179,7 +184,7 @@ export class PoleManager {
     }
 
     update(delta, timeElapsed, cameraPos, nightFactor = 1.0, vehicles = [], pedestrians = []) {
-        // Blink alert triangles
+        this.frameCount++;
         const blinkOp = 0.5 + Math.sin(timeElapsed * 5) * 0.5;
         this.alertMat.opacity = blinkOp;
 
@@ -207,41 +212,49 @@ export class PoleManager {
             // SMART GRID LIGHTING
             if (p.userData.bulbMat && p.userData.status === 'operando') {
                 if (nightFactor > 0.1) {
-                    let active = false;
-                    const pPos = p.position;
                     
-                    // Check camera
-                    if (cameraPos && pPos.distanceToSquared(cameraPos) < maxDistSq) {
-                        active = true;
-                    } else {
-                        // Check vehicles
-                        for (let v of vehicles) {
-                            if (pPos.distanceToSquared(v.mesh.position) < maxDistSq) {
-                                active = true; break;
-                            }
-                        }
-                        // Check pedestrians
-                        if (!active) {
-                            for (let ped of pedestrians) {
-                                if (pPos.distanceToSquared(ped.mesh.position) < maxDistSq) {
+                    // OPTIMIZATION 2: CPU Interleaving. Só checamos colisões reais em 25% dos postes por frame
+                    // Como a luz demora para acender/apagar, checar a cada 4 frames é imperceptível visualmente, mas poupa 75% da CPU.
+                    if (i % 4 === this.frameCount % 4) {
+                        let active = false;
+                        const pPos = p.position;
+                        
+                        if (cameraPos && pPos.distanceToSquared(cameraPos) < maxDistSq) {
+                            active = true;
+                        } else {
+                            for (let v of vehicles) {
+                                if (pPos.distanceToSquared(v.mesh.position) < maxDistSq) {
                                     active = true; break;
                                 }
                             }
+                            if (!active) {
+                                for (let ped of pedestrians) {
+                                    if (pPos.distanceToSquared(ped.mesh.position) < maxDistSq) {
+                                        active = true; break;
+                                    }
+                                }
+                            }
                         }
+                        p.userData.targetIntensity = active ? 1.0 : 0.1;
                     }
-
-                    p.userData.targetIntensity = active ? 1.0 : 0.1;
                     
-                    // Smooth transition
+                    // Smooth transition (roda todo frame para ser suave)
                     p.userData.bulbMat.emissiveIntensity += (p.userData.targetIntensity - p.userData.bulbMat.emissiveIntensity) * (delta * 4);
                     
                     if (p.userData.poolMat) {
-                        p.userData.poolMat.opacity = p.userData.bulbMat.emissiveIntensity * nightFactor * 0.8;
+                        const newOpacity = p.userData.bulbMat.emissiveIntensity * nightFactor * 0.8;
+                        p.userData.poolMat.opacity = newOpacity;
+                        
+                        // OPTIMIZATION 3: Oculta o mesh totalmente se a luz estiver quase invisível, salvando GPU Overdraw/Fillrate
+                        if (p.userData.poolMesh) {
+                            p.userData.poolMesh.visible = (newOpacity > 0.05);
+                        }
                     }
                 } else {
                     // Daytime
                     p.userData.bulbMat.emissiveIntensity = 0;
                     if (p.userData.poolMat) p.userData.poolMat.opacity = 0;
+                    if (p.userData.poolMesh) p.userData.poolMesh.visible = false;
                 }
             }
         }
