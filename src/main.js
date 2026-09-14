@@ -15,6 +15,7 @@ let currentDecimalTime = 7.0; // Hora inicial (07:00)
 let targetDecimalTime = 7.0;
 let isTimeRunning = true; // Simulação de tempo contínua ativa por padrão
 let timeSpeed = 0.08; // 1 hora virtual a cada ~12.5s (minutos avançam continuamente e de forma fluida)
+export let globalNightFactor = 0.0;
 
 const scene = new THREE.Scene();
 const vfxManager = new VFXManager(scene);
@@ -2276,7 +2277,7 @@ function animate() {
         powerMats.wireCritical.opacity = 0.65 + Math.sin(now * 0.012) * 0.3;
     }
 
-    if (poleManager) poleManager.update(delta, now/1000);
+    if (poleManager) poleManager.update(delta, now/1000, camera.position, globalNightFactor, trafficManager ? trafficManager.vehicles : [], trafficManager ? trafficManager.pedestrians : []);
     if (trafficManager) trafficManager.update(delta);
     if (repairManager) repairManager.update(delta, now/1000);
     if (activePole) updatePoleUI();
@@ -2434,16 +2435,16 @@ function updateSmoothDayNightCycle(delta) {
     sunFactor = Math.max(0, Math.min(1, sunFactor));
 
     // Fator Noturno (0 = Dia Pleno 07h-17h, 1 = Plena Noite 19h30-05h30)
-    let nightFactor = 0;
     if (h >= 19.5 || h < 5.5) {
-        nightFactor = 1.0;
+        globalNightFactor = 1.0;
     } else if (h >= 17.5 && h < 19.5) {
-        nightFactor = (h - 17.5) / 2.0; // Acende gradualmente ao entardecer
+        globalNightFactor = (h - 17.5) / 2.0; // Acende gradualmente ao entardecer
     } else if (h >= 5.5 && h < 6.8) {
-        nightFactor = 1.0 - (h - 5.5) / 1.3; // Apaga ao amanhecer
+        globalNightFactor = 1.0 - (h - 5.5) / 1.3; // Apaga ao amanhecer
     } else {
-        nightFactor = 0.0; // Totalmente desligado durante o dia
+        globalNightFactor = 0.0; // Totalmente desligado durante o dia
     }
+    const nightFactor = globalNightFactor;
 
     // Interpolação suave de 24h para Cor do Céu e Névoa
     const currentSkyColor = new THREE.Color();

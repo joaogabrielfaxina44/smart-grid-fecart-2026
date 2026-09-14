@@ -57,6 +57,22 @@ export class PoleManager {
         shape.lineTo(-0.4, -0.5);
         shape.lineTo(0, 0.5);
         this.alertGeo = new THREE.ShapeGeometry(shape);
+
+        // Ground Light Pool Texture
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+        grad.addColorStop(0, 'rgba(255, 230, 140, 1.0)');
+        grad.addColorStop(0.25, 'rgba(255, 180, 60, 0.7)');
+        grad.addColorStop(0.65, 'rgba(255, 140, 20, 0.2)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+        this.groundLightPoolTexture = new THREE.CanvasTexture(canvas);
+        this.groundLightPoolTexture.colorSpace = THREE.SRGBColorSpace;
     }
 
     addPole(x, z, angleRad, options = {}) {
@@ -104,7 +120,11 @@ export class PoleManager {
             lampHousing.scale.set(0.4, 0.15, 0.6);
             lampHousing.position.set(0, 6.0, -1.6);
             
-            const lampBulb = new THREE.Mesh(geometries.box, poleMats.lampBulbOn);
+            // Smart Grid feature: clone material for individual control
+            const bulbMat = poleMats.lampBulbOn.clone();
+            bulbMat.emissiveIntensity = 0.1; // Default dim state
+            
+            const lampBulb = new THREE.Mesh(geometries.box, bulbMat);
             lampBulb.scale.set(0.3, 0.05, 0.4);
             lampBulb.position.set(0, 5.95, -1.6);
             
@@ -113,6 +133,24 @@ export class PoleManager {
             poleGroup.add(lampBulb);
             
             poleGroup.userData.lampBulb = lampBulb;
+            poleGroup.userData.bulbMat = bulbMat;
+            poleGroup.userData.targetIntensity = 0.1;
+
+            // Ground Light Pool
+            const poolMat = new THREE.MeshBasicMaterial({
+                map: this.groundLightPoolTexture,
+                transparent: true,
+                opacity: 0.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const poolGeo = new THREE.PlaneGeometry(16, 16);
+            const pool = new THREE.Mesh(poolGeo, poolMat);
+            pool.rotation.x = -Math.PI / 2;
+            pool.position.set(0, 0.06, -1.6); // Under the bulb
+            poleGroup.add(pool);
+            
+            poleGroup.userData.poolMat = poolMat;
         }
 
         // Alert Triangle (Hidden by default)
@@ -140,29 +178,71 @@ export class PoleManager {
         return poleGroup;
     }
 
-    update(delta, timeElapsed) {
+    update(delta, timeElapsed, cameraPos, nightFactor = 1.0, vehicles = [], pedestrians = []) {
         // Blink alert triangles
         const blinkOp = 0.5 + Math.sin(timeElapsed * 5) * 0.5;
         this.alertMat.opacity = blinkOp;
 
-        // Decrease durability slowly over time (random chance per frame to spread it out)
+        const maxDistSq = 45 * 45; // Sensor radius
+
         for (let i = 0; i < this.poles.length; i++) {
             const p = this.poles[i];
+            
             if (p.userData.status !== 'manutencao' && Math.random() < 0.01 * delta) {
                 p.userData.durability = Math.max(0, p.userData.durability - 5);
             }
             
             if (p.userData.durability <= 0 && p.userData.status !== 'quebrado') {
                 p.userData.status = 'quebrado';
-                if (p.userData.lampBulb) p.userData.lampBulb.material = poleMats.lampBulbOff;
+                if (p.userData.bulbMat) p.userData.bulbMat.emissiveIntensity = 0;
             }
 
-            // Show alert if durability < 20
             if (p.userData.durability < 20) {
                 p.userData.alertMesh.visible = true;
-                p.userData.alertMesh.rotation.y += delta * 2; // spin the triangle
+                p.userData.alertMesh.rotation.y += delta * 2;
             } else {
                 p.userData.alertMesh.visible = false;
+            }
+
+            // SMART GRID LIGHTING
+            if (p.userData.bulbMat && p.userData.status === 'operando') {
+                if (nightFactor > 0.1) {
+                    let active = false;
+                    const pPos = p.position;
+                    
+                    // Check camera
+                    if (cameraPos && pPos.distanceToSquared(cameraPos) < maxDistSq) {
+                        active = true;
+                    } else {
+                        // Check vehicles
+                        for (let v of vehicles) {
+                            if (pPos.distanceToSquared(v.mesh.position) < maxDistSq) {
+                                active = true; break;
+                            }
+                        }
+                        // Check pedestrians
+                        if (!active) {
+                            for (let ped of pedestrians) {
+                                if (pPos.distanceToSquared(ped.mesh.position) < maxDistSq) {
+                                    active = true; break;
+                                }
+                            }
+                        }
+                    }
+
+                    p.userData.targetIntensity = active ? 1.0 : 0.1;
+                    
+                    // Smooth transition
+                    p.userData.bulbMat.emissiveIntensity += (p.userData.targetIntensity - p.userData.bulbMat.emissiveIntensity) * (delta * 4);
+                    
+                    if (p.userData.poolMat) {
+                        p.userData.poolMat.opacity = p.userData.bulbMat.emissiveIntensity * nightFactor * 0.8;
+                    }
+                } else {
+                    // Daytime
+                    p.userData.bulbMat.emissiveIntensity = 0;
+                    if (p.userData.poolMat) p.userData.poolMat.opacity = 0;
+                }
             }
         }
     }
