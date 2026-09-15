@@ -330,6 +330,7 @@ export class CityGraph {
             node.demanda_kw_atual   = node.demanda_base_kw;
             node.status_energizado  = true;
             node.sobrecarga_ativa   = false;
+            node.em_corte_emergencia = false;
         }
         for (const edge of this.edges.values()) {
             edge.status_ativa      = true;
