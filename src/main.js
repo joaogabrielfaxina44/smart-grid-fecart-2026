@@ -298,7 +298,7 @@ const powerMats = {
     wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
     wireGlowing: new THREE.LineDashedMaterial({ color: 0x38bdf8, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 6, gapSize: 2 }),
     wireOverload: new THREE.LineDashedMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2, dashSize: 4, gapSize: 2 }),
-    wireCritical: new THREE.LineDashedMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, linewidth: 2.5, dashSize: 4, gapSize: 2 }),
+    wireCritical: new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }),
     wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
     wireHealing: new THREE.LineDashedMaterial({ color: 0x00ffff, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 2, gapSize: 1 }),
 };
@@ -2126,9 +2126,7 @@ function syncSceneWithBackend(grafo, estado, logs) {
             mats.forEach(mat => {
                 if (!mat) return;
 
-                const baseDemanda = node.demanda_base_kw || node.demandaBase || 1;
-                const demandaAtual = node.demanda_kw_atual;
-                const isCortado = (demandaAtual < baseDemanda) && node.tipo !== 'Residencial' && node.tipo !== 'Geração' && node.prioridade !== 1;
+                const isCortado = node.em_corte_emergencia;
                 const isHospital = node.prioridade === 1;
 
                 if (!node.status_energizado) {

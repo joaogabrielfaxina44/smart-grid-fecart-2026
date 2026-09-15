@@ -560,7 +560,12 @@ export class DemandResponseAgent extends BaseAgent {
         if (!arestaSobrecarregada && !temAlerta && !cargaGlobal && !temFalha) {
             // Restauração gradual (+5% por tick)
             for (const [nodeId, mult] of this.cortesAtivos) {
-                if (mult >= 1.0) { this.cortesAtivos.delete(nodeId); continue; }
+                const node = grafo.nodes.get(nodeId);
+                if (mult >= 1.0) { 
+                    this.cortesAtivos.delete(nodeId); 
+                    if (node) node.em_corte_emergencia = false;
+                    continue; 
+                }
                 this.cortesAtivos.set(nodeId, Math.min(1.0, mult + 0.05));
             }
             this._aplicarCortes(grafo);
@@ -581,18 +586,26 @@ export class DemandResponseAgent extends BaseAgent {
 
         // Se o fluxo bater 95%, corta a demanda da Indústria em 30%
         for (const [nodeId, node] of grafo.nodes) {
-            if (node.is_subestacao || node.prioridade === 1) continue; // Hospital preservado (0% de corte)
+            if (node.is_subestacao || node.prioridade === 1) {
+                node.em_corte_emergencia = false;
+                continue;
+            }
 
             let novaMult = 1.0;
             if (node.tipo === 'Indústria') {
                 novaMult = 0.70; // Corte de 30%
             } else if (node.tipo === 'Comercial' || node.tipo === 'Grandes Edifícios') {
                 novaMult = 0.80; // Corte de 20%
+            } else if (node.tipo === 'Residencial') {
+                novaMult = 0.10; // Corte drástico (Load Shedding extremo)
             }
 
             if (novaMult < 1.0) {
                 const atualMult = this.cortesAtivos.get(nodeId) ?? 1.0;
                 this.cortesAtivos.set(nodeId, Math.min(atualMult, novaMult));
+                node.em_corte_emergencia = true;
+            } else {
+                node.em_corte_emergencia = false;
             }
         }
 
