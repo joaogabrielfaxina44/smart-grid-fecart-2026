@@ -77,6 +77,9 @@ export class PoleManager {
         // OPTIMIZATION 1: Reutilizar a mesma geometria para todos os pools de luz (evita memory leak e travamentos)
         this.poolGeo = new THREE.PlaneGeometry(16, 16);
         this.frameCount = 0;
+        
+        this.colorNormal = new THREE.Color(0x584b3e); // Wood color
+        this.colorWarning = new THREE.Color(0xff6600); // Neon orange
     }
 
     addPole(x, z, angleRad, options = {}) {
@@ -84,19 +87,23 @@ export class PoleManager {
         poleGroup.position.set(x, 0, z);
         poleGroup.rotation.y = angleRad;
         
+        const shaftMat = poleMats.wood.clone();
+        
         // Base Shaft
-        const shaft = new THREE.Mesh(geometries.cylinder, poleMats.wood);
+        const shaft = new THREE.Mesh(geometries.cylinder, shaftMat);
         shaft.scale.set(0.12, 7.2, 0.12);
         shaft.position.y = 3.6;
         shaft.castShadow = false; // OTIMIZAÇÃO: Desativado para performance
         poleGroup.add(shaft);
         
         // Cross Arm
-        const crossArm = new THREE.Mesh(geometries.box, poleMats.wood);
+        const crossArm = new THREE.Mesh(geometries.box, shaftMat);
         crossArm.scale.set(1.8, 0.12, 0.12);
         crossArm.position.y = 6.8;
         crossArm.castShadow = false; // OTIMIZAÇÃO
         poleGroup.add(crossArm);
+        
+        poleGroup.userData.shaftMat = shaftMat;
 
         // Transformer Box
         if (options.hasTransformer) {
@@ -193,13 +200,27 @@ export class PoleManager {
         for (let i = 0; i < this.poles.length; i++) {
             const p = this.poles[i];
             
-            if (p.userData.status !== 'manutencao' && Math.random() < 0.01 * delta) {
-                p.userData.durability = Math.max(0, p.userData.durability - 5);
+            // Reduz em blocos grandes para que alguns postes cheguem a <20 rapidamente, em vez de todos degradarem lentamente juntos.
+            if (p.userData.status !== 'manutencao' && Math.random() < 0.001 * delta) {
+                p.userData.durability = Math.max(0, p.userData.durability - 85);
             }
             
             if (p.userData.durability <= 0 && p.userData.status !== 'quebrado') {
                 p.userData.status = 'quebrado';
                 if (p.userData.bulbMat) p.userData.bulbMat.emissiveIntensity = 0;
+            }
+            
+            if (p.userData.shaftMat) {
+                const lerpFactor = 1.0 - (p.userData.durability / 100.0);
+                p.userData.shaftMat.color.lerpColors(this.colorNormal, this.colorWarning, lerpFactor);
+                
+                // Emissive glow so it stands out in the dark
+                if (lerpFactor > 0.5) {
+                    p.userData.shaftMat.emissive.copy(this.colorWarning);
+                    p.userData.shaftMat.emissiveIntensity = lerpFactor * 0.8;
+                } else {
+                    p.userData.shaftMat.emissiveIntensity = 0;
+                }
             }
 
             if (p.userData.durability < 20) {
