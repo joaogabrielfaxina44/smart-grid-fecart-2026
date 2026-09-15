@@ -296,11 +296,11 @@ const powerMats = {
         emissiveIntensity: 0.0
     }),
     wireNormal: new THREE.MeshBasicMaterial({ color: 0x1f2429 }),
-    wireGlowing: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
-    wireOverload: new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }),
-    wireCritical: new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending }),
-    wireBlackout: new THREE.MeshBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.4 }),
-    wireHealing: new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
+    wireGlowing: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9 }),
+    wireOverload: new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95 }),
+    wireCritical: new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 1.0 }),
+    wireBlackout: new THREE.MeshBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.8 }),
+    wireHealing: new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }),
 };
 
 // ── Textura Radial de Iluminação Pública no Chão (Warm Light Pool) ──
@@ -2117,15 +2117,30 @@ function syncSceneWithBackend(grafo, estado, logs) {
     }
 
     // ── 1. Sincronizar Nós (Apagão por bairro / Edifícios) ──────
+    // First, map nodes to their primary 3D blocks
+    const blockMappings = [];
     for (const [nodeId, node] of grafo.nodes) {
         const threeId = ID_MAP[nodeId];
         if (!threeId) continue;
+        const bloco3D = cityGroup.children.find(c => c.isGroup && c.userData?.backendId === threeId);
+        if (bloco3D) blockMappings.push({ node, bloco3D, primary: true });
+    }
 
-        const bloco3D = cityGroup.children.find(
-            c => c.isGroup && c.userData?.backendId === threeId
-        );
-        if (!bloco3D) continue;
+    // Mirror Bairro_Residencial_A to ALL cosmetic residential/mixed blocks for maximum visual impact
+    const nodeResA = grafo.nodes.get('Bairro_Residencial_A');
+    const nodeComA = grafo.nodes.get('Centro_Comercial');
+    cityGroup.children.forEach(c => {
+        if (c.isGroup && !c.userData?.backendId) {
+            if (nodeResA && (c.name.startsWith('residential-') || c.name.startsWith('mixed-'))) {
+                blockMappings.push({ node: nodeResA, bloco3D: c, primary: false });
+            } else if (nodeComA && c.name.startsWith('commercial-')) {
+                blockMappings.push({ node: nodeComA, bloco3D: c, primary: false });
+            }
+        }
+    });
 
+    // Process all visual updates
+    for (const { node, bloco3D } of blockMappings) {
         bloco3D.traverse(child => {
             if (child.name === "streetLampBulb" && child.material) {
                 if (!node.status_energizado) {
