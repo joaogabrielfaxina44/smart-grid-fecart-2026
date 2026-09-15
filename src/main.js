@@ -295,12 +295,12 @@ const powerMats = {
         emissive: 0xffa024,
         emissiveIntensity: 0.0
     }),
-    wireNormal: new THREE.LineBasicMaterial({ color: 0x1f2429, linewidth: 1 }),
-    wireGlowing: new THREE.LineDashedMaterial({ color: 0x38bdf8, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 6, gapSize: 2 }),
-    wireOverload: new THREE.LineDashedMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, linewidth: 2, dashSize: 4, gapSize: 2 }),
-    wireCritical: new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }),
-    wireBlackout: new THREE.LineBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.25, linewidth: 1 }),
-    wireHealing: new THREE.LineDashedMaterial({ color: 0x00ffff, transparent: true, opacity: 1.0, linewidth: 3, dashSize: 2, gapSize: 1 }),
+    wireNormal: new THREE.MeshBasicMaterial({ color: 0x1f2429 }),
+    wireGlowing: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
+    wireOverload: new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }),
+    wireCritical: new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending }),
+    wireBlackout: new THREE.MeshBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.4 }),
+    wireHealing: new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
 };
 
 // ── Textura Radial de Iluminação Pública no Chão (Warm Light Pool) ──
@@ -971,6 +971,29 @@ function createResidentialBlock(block) {
     });
 
     createStreetTrees(block.x, block.z, 3);
+    addDistributionWiresToBlock(group, block.x, block.z, lots);
+}
+
+function addDistributionWiresToBlock(group, blockX, blockZ, lotsList) {
+    const hubY = 10.0;
+    const centralPole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, hubY), new THREE.MeshStandardMaterial({color: 0x111111}));
+    centralPole.position.set(blockX, hubY/2, blockZ);
+    group.add(centralPole);
+
+    const hubPos = new THREE.Vector3(blockX, hubY, blockZ);
+    
+    lotsList.forEach(lot => {
+        const lotPos = new THREE.Vector3(blockX + lot[0], 4.5, blockZ + lot[1]);
+        const midY = Math.min(hubPos.y, lotPos.y) - 1.5;
+        const midPos = new THREE.Vector3().addVectors(hubPos, lotPos).multiplyScalar(0.5);
+        midPos.y = midY;
+        
+        const curve = new THREE.QuadraticBezierCurve3(hubPos, midPos, lotPos);
+        const geometry = new THREE.TubeGeometry(curve, 10, 0.15, 4, false);
+        const wire = new THREE.Mesh(geometry, powerMats.wireGlowing);
+        wire.name = 'distribution_wire';
+        group.add(wire);
+    });
 }
 
 function createMixedUrbanBlock(block) {
@@ -1003,6 +1026,7 @@ function createMixedUrbanBlock(block) {
     });
 
     createStreetTrees(block.x, block.z, 2);
+    addDistributionWiresToBlock(group, block.x, block.z, lots);
 }
 
 function createCommercialBlock(block) {
@@ -1709,9 +1733,9 @@ function createTransmissionLines() {
                 p2
             ];
 
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const line = new THREE.Line(geometry, powerMats.wireGlowing);
-            line.computeLineDistances();
+            const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.05);
+            const geometry = new THREE.TubeGeometry(curve, 64, 0.4, 6, false);
+            const line = new THREE.Mesh(geometry, powerMats.wireGlowing);
             line.userData = { 
                 originalMat: powerMats.wireGlowing, 
                 blackoutMat: powerMats.wireBlackout, 
@@ -2120,6 +2144,18 @@ function syncSceneWithBackend(grafo, estado, logs) {
                 return;
             }
 
+            if (child.name === 'distribution_wire') {
+                const isCortado = node.em_corte_emergencia;
+                if (!node.status_energizado) {
+                    child.material = powerMats.wireBlackout;
+                } else if (isCortado) {
+                    child.material = powerMats.wireBlackout; // Sem fluxo!
+                } else {
+                    child.material = powerMats.wireGlowing; // Fluxo normal
+                }
+                return;
+            }
+
             if (!child.isMesh || !child.material) return;
 
             const mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -2271,12 +2307,7 @@ function animate() {
         });
     }
 
-    if (powerMats.wireOverload) {
-        powerMats.wireOverload.opacity = 0.65 + Math.sin(now * 0.007) * 0.3;
-    }
-    if (powerMats.wireCritical) {
-        powerMats.wireCritical.opacity = 0.65 + Math.sin(now * 0.012) * 0.3;
-    }
+
 
     if (poleManager) poleManager.update(delta, now/1000, camera.position, globalNightFactor, trafficManager ? trafficManager.vehicles : [], trafficManager ? trafficManager.pedestrians : []);
     if (trafficManager) trafficManager.update(delta);
@@ -2345,16 +2376,10 @@ function animate() {
         orbitControls.update();
     }
 
-    // Atualizar animação dos fios
-    const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
-    if (transLinesGroup) {
-        transLinesGroup.children.forEach(linha => {
-            if (linha.isLine && linha.material?.isLineDashedMaterial && !linha.userData.broken) {
-                const speed = linha.userData.currentSpeed || 5.0;
-                linha.material.dashOffset -= delta * speed;
-            }
-        });
-    }
+    // Animação de pulsação para as linhas de energia Mesh
+    if (powerMats.wireCritical) powerMats.wireCritical.opacity = 0.6 + Math.sin(now * 0.012) * 0.4;
+    if (powerMats.wireGlowing) powerMats.wireGlowing.opacity = 0.7 + Math.sin(now * 0.005) * 0.2;
+    if (powerMats.wireOverload) powerMats.wireOverload.opacity = 0.6 + Math.sin(now * 0.008) * 0.3;
 
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
     updateSmoothDayNightCycle(delta);
