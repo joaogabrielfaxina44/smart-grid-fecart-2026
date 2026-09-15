@@ -329,6 +329,7 @@ export class CityGraph {
         for (const node of this.nodes.values()) {
             node.demanda_kw_atual   = node.demanda_base_kw;
             node.status_energizado  = true;
+            node.sobrecarga_ativa   = false;
         }
         for (const edge of this.edges.values()) {
             edge.status_ativa      = true;
@@ -422,6 +423,9 @@ export class PeakHourAgent extends BaseAgent {
             if (node.is_subestacao || node.tipo === 'Geração') continue;
             const fator = fatores[node.tipo] ?? 1.0;
             node.demanda_kw_atual = node.demanda_base_kw * fator;
+            if (node.sobrecarga_ativa) {
+                node.demanda_kw_atual *= 2.5;
+            }
         }
 
         // Recalcula a distribuição de energia no grafo inteiro

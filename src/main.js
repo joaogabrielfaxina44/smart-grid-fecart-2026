@@ -1846,9 +1846,8 @@ function setupUI() {
     document.getElementById('btn-sobrecarga')?.addEventListener('click', () => {
         const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
         if (noIndustria) {
-            const baseDemand = noIndustria.demandaBase ?? noIndustria.demanda_base_kw ?? 1500;
-            noIndustria.demanda_kw_atual = baseDemand * 2.5;
-            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A: demanda ajustada para ${noIndustria.demanda_kw_atual} kW (2.5x).`);
+            noIndustria.sobrecarga_ativa = true;
+            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A.`);
         }
         if (citySimulator) citySimulator.tick(0);
     });
