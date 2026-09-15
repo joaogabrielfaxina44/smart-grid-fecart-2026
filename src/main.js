@@ -62,7 +62,8 @@ const keys = {
     left: false,
     right: false,
     up: false,
-    down: false
+    down: false,
+    sprint: false
 };
 
 const flyVelocity = new THREE.Vector3();
@@ -85,6 +86,7 @@ function resetKeys() {
     keys.right = false;
     keys.up = false;
     keys.down = false;
+    keys.sprint = false;
     isDraggingMouse = false;
     flyVelocity.set(0, 0, 0);
 }
@@ -143,8 +145,10 @@ function updateKey(code, key, isPressed) {
         keys.right = isPressed;
     } else if (c === 'Space' || c === 'KeyE' || k === ' ' || k === 'e') {
         keys.up = isPressed;
-    } else if (c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyQ' || k === 'shift' || k === 'q') {
+    } else if (c === 'ControlLeft' || c === 'ControlRight' || c === 'KeyC' || k === 'control' || k === 'c') {
         keys.down = isPressed;
+    } else if (c === 'ShiftLeft' || c === 'ShiftRight' || k === 'shift') {
+        keys.sprint = isPressed;
     }
 }
 
@@ -948,9 +952,9 @@ function createResidentialBlock(block) {
     cityGroup.add(group);
 
     const lots = [
-        [-6.8, -6.6], [0, -6.8], [6.8, -6.5],
-        [-6.9, 0.1], [0.2, 0.3], [6.8, 0.2],
-        [-3.5, 6.8], [4.2, 6.6]
+        [-6.5, -6.5], [6.5, -6.5],
+        [-6.5, 0.0],  [6.5, 0.0],
+        [-6.5, 6.5],  [6.5, 6.5]
     ];
     const local = seededRandom(3000 + block.index * 41);
 
@@ -977,9 +981,9 @@ function createMixedUrbanBlock(block) {
 
     const distance = Math.hypot(block.row - GRID_RADIUS, block.col - GRID_RADIUS);
     const lots = [
-        [-6.8, -6.8], [0.2, -6.7], [6.8, -6.8],
-        [-6.9, 0.3], [0.1, 0.2], [6.7, 0.2],
-        [-3.6, 6.8], [4.2, 6.7]
+        [-6.5, -6.5], [6.5, -6.5],
+        [-6.5, 0.0],  [6.5, 0.0],
+        [-6.5, 6.5],  [6.5, 6.5]
     ];
 
     lots.forEach(([lx, lz], lotIndex) => {
@@ -1063,10 +1067,10 @@ function createDetachedHouse(parent, x, z, seed, scale = 1, blockIndex = 0) {
     const ry = height + 0.6;
     const rRot = 0.5;
     const r1 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z + rd/2 - 0.2, material: roofMaterial, parent, cast: true, receive: true });
-    r1.rotation.x = -rRot;
+    r1.rotation.x = rRot; // Fixed inverted roof
     r1.updateMatrix();
     const r2 = addBox({ width: rw, height: 0.1, depth: rd, x: x, y: ry, z: z - rd/2 + 0.2, material: roofMaterial, parent, cast: true, receive: true });
-    r2.rotation.x = rRot;
+    r2.rotation.x = -rRot; // Fixed inverted roof
     r2.updateMatrix();
 
     addBox({ width: 1.5, height: 0.1, depth: 1.0, x: x, y: height * 0.4, z: z + depth/2 + 0.5, material: materials.concrete, parent, cast: false, receive: true });
@@ -2297,7 +2301,8 @@ function animate() {
             }
         } else {
             const altitude = camera.position.y;
-            const baseSpeed = Math.max(12, 10 + Math.pow(Math.max(0, altitude) / 14, 1.2) * 4.5);
+            let baseSpeed = Math.max(12, 10 + Math.pow(Math.max(0, altitude) / 14, 1.2) * 4.5);
+            if (keys.sprint) baseSpeed *= 1.8;
 
             forwardVector.set(0, 0, -1).applyQuaternion(camera.quaternion);
             rightVector.set(1, 0, 0).applyQuaternion(camera.quaternion);

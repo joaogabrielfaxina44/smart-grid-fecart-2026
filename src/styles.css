@@ -76,6 +76,7 @@ body {
 .glass-panel {
     pointer-events: auto;
     position: absolute;
+    z-index: 100;
     top: 80px;
     right: 20px;
     width: 340px;

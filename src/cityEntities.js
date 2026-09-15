@@ -88,14 +88,14 @@ export class PoleManager {
         const shaft = new THREE.Mesh(geometries.cylinder, poleMats.wood);
         shaft.scale.set(0.12, 7.2, 0.12);
         shaft.position.y = 3.6;
-        shaft.castShadow = true;
+        shaft.castShadow = false; // OTIMIZAÇÃO: Desativado para performance
         poleGroup.add(shaft);
         
         // Cross Arm
         const crossArm = new THREE.Mesh(geometries.box, poleMats.wood);
         crossArm.scale.set(1.8, 0.12, 0.12);
         crossArm.position.y = 6.8;
-        crossArm.castShadow = true;
+        crossArm.castShadow = false; // OTIMIZAÇÃO
         poleGroup.add(crossArm);
 
         // Transformer Box
@@ -103,7 +103,7 @@ export class PoleManager {
             const trans = new THREE.Mesh(geometries.box, poleMats.transformer);
             trans.scale.set(0.5, 0.8, 0.5);
             trans.position.set(0, 5.0, 0.2);
-            trans.castShadow = true;
+            trans.castShadow = false; // OTIMIZAÇÃO
             poleGroup.add(trans);
         }
 

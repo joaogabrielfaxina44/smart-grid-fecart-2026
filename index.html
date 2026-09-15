@@ -168,7 +168,8 @@
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                     <p><strong>Dicas de Voo:</strong><br>
                     • Use <strong>W, A, S, D</strong> para planar entre as ruas e prédios.<br>
-                    • <strong>Espaço</strong> para subir, <strong>Shift</strong> para descer.<br>
+                    • <strong>Espaço</strong> para subir, <strong>Ctrl</strong> para descer.<br>
+                    • Segure <strong>Shift</strong> para voar mais rápido.
                     • <strong>Arraste o Mouse</strong> para olhar em 360°.<br>
                     • A velocidade se ajusta sozinha: lenta perto do chão, rápida nas alturas!</p>
                 </div>
@@ -182,7 +183,9 @@
             </div>
             <div class="hud-divider"></div>
             <div class="hud-item hud-keys">
-                <span class="key-badge">Espaço</span> Subir &bull; <span class="key-badge">Shift</span> Descer
+                <span class="key-badge">Espaço</span> Subir &bull; <span class="key-badge">Ctrl</span> Descer
+                &nbsp;|&nbsp;
+                <span class="key-badge">Shift</span> Voar Rápido
             </div>
             <div class="hud-divider"></div>
             <div class="hud-item hud-keys">
@@ -248,7 +251,7 @@
         </div>
 
         <!-- POLE UI OVERLAY -->
-        <div id="pole-ui-container" style="display: none; position: absolute; top: 20px; right: 20px; background: rgba(20, 25, 40, 0.95); border: 2px solid #4da6ff; border-radius: 12px; padding: 20px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.3); z-index: 250; color: white; width: 300px;">
+        <div id="pole-ui-container" style="display: none; position: absolute; top: 20px; right: 20px; background: rgba(20, 25, 40, 0.95); border: 2px solid #4da6ff; border-radius: 12px; padding: 20px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.3); z-index: 9999; color: white; width: 300px; pointer-events: auto;">
             <h3 style="margin-top: 0; color: #4da6ff;">⚡ Status do Componente</h3>
             <div style="margin-bottom: 10px;">
                 <strong>ID:</strong> <span id="pole-ui-id">#000</span>
