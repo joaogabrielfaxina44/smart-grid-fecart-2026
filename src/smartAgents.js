@@ -505,18 +505,21 @@ export class PredictiveMaintAgent extends BaseAgent {
 
             const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
 
-            if (taxaCarga > 0.90) {
+            if (taxaCarga >= 0.75) {
                 const horasAcum = (this.historicoSobrecarga.get(keyNorm) ?? 0) + 0.25;
                 this.historicoSobrecarga.set(keyNorm, horasAcum);
 
-                if (horasAcum >= 2.0) {
+                if (horasAcum >= 0.25) { // 1 único tick (15 min virtuais)
                     alertas.push({ aresta: keyNorm, taxa: taxaCarga, horas: horasAcum, severidade: 'RISCO_SUPERAQUECIMENTO' });
                     logs.push(`[${this.nome}] ⚠️ SUPERAQUECIMENTO: ${edge.origem}→${edge.destino} (${(taxaCarga*100).toFixed(0)}% por ${horasAcum.toFixed(1)}h)`);
                 }
-            } else if (taxaCarga <= 0.85) {
+            } else if (taxaCarga <= 0.70) {
                 if ((this.historicoSobrecarga.get(keyNorm) ?? 0) > 0) {
                     this.historicoSobrecarga.set(keyNorm, 0);
                     logs.push(`[${this.nome}] ✅ Linha ${edge.origem}→${edge.destino} estabilizada`);
+                } else if (Math.random() < 0.04) {
+                    alertas.push({ aresta: keyNorm, taxa: taxaCarga, horas: 0, severidade: 'DESGASTE_EQUIPAMENTO' });
+                    logs.push(`[${this.nome}] 🔧 MANUTENÇÃO PREDITIVA: Desgaste detectado na linha ${edge.origem}→${edge.destino}`);
                 }
             }
         }
