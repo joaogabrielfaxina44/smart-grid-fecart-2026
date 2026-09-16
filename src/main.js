@@ -796,12 +796,11 @@ function createRoadNetwork() {
         addRoadSegment(WORLD_SIZE, ROAD_WIDTH, 0, coord);
         addRoadSegment(ROAD_WIDTH, WORLD_SIZE, coord, 0);
 
-        // Linhas de centro tracejadas: desenha entre cruzamentos, nunca sobre eles
-        const halfInter = ROAD_WIDTH / 2 + 1.0; // margem de segurança
+        // Linhas de centro tracejadas: entre cruzamentos, nunca sobre eles
+        const halfInter = ROAD_WIDTH / 2 + 1.0;
         const dashLen = 3.0;
         const dashGap = 3.0;
 
-        // Para cada par de cruzamentos consecutivos, gera traços horizontais (ao longo de X)
         for (let c = 0; c < ROAD_COORDS.length - 1; c++) {
             const segStart = ROAD_COORDS[c] + halfInter;
             const segEnd   = ROAD_COORDS[c + 1] - halfInter;
@@ -811,7 +810,6 @@ function createRoadNetwork() {
                 pos += dashLen + dashGap;
             }
         }
-        // Traços verticais (ao longo de Z)
         for (let r = 0; r < ROAD_COORDS.length - 1; r++) {
             const segStart = ROAD_COORDS[r] + halfInter;
             const segEnd   = ROAD_COORDS[r + 1] - halfInter;
@@ -820,6 +818,33 @@ function createRoadNetwork() {
                 addBox({ width: 0.18, height: 0.03, depth: dashLen, x: coord, y: 0.13, z: pos, material: materials.roadMarking, cast: false, receive: false });
                 pos += dashLen + dashGap;
             }
+        }
+    });
+
+    // Calçadas por trecho (entre cruzamentos), evitando sobreposição nas interseções
+    const swHalf = SIDEWALK_WIDTH / 2;
+    const rwHalf = ROAD_WIDTH / 2;
+    const interHalf = ROAD_WIDTH / 2; // não desenha calçada dentro do cruzamento
+    ROAD_COORDS.forEach((rz) => {
+        for (let c = 0; c < ROAD_COORDS.length - 1; c++) {
+            const x1 = ROAD_COORDS[c]   + interHalf;
+            const x2 = ROAD_COORDS[c+1] - interHalf;
+            const segW = x2 - x1;
+            if (segW <= 0) continue;
+            const cx = (x1 + x2) / 2;
+            addBox({ width: segW, height: 0.12, depth: SIDEWALK_WIDTH, x: cx, y: 0.11, z: rz - rwHalf - swHalf, material: materials.sidewalk, cast: false, receive: true });
+            addBox({ width: segW, height: 0.12, depth: SIDEWALK_WIDTH, x: cx, y: 0.11, z: rz + rwHalf + swHalf, material: materials.sidewalk, cast: false, receive: true });
+        }
+    });
+    ROAD_COORDS.forEach((rx) => {
+        for (let r = 0; r < ROAD_COORDS.length - 1; r++) {
+            const z1 = ROAD_COORDS[r]   + interHalf;
+            const z2 = ROAD_COORDS[r+1] - interHalf;
+            const segD = z2 - z1;
+            if (segD <= 0) continue;
+            const cz = (z1 + z2) / 2;
+            addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth: segD, x: rx - rwHalf - swHalf, y: 0.11, z: cz, material: materials.sidewalk, cast: false, receive: true });
+            addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth: segD, x: rx + rwHalf + swHalf, y: 0.11, z: cz, material: materials.sidewalk, cast: false, receive: true });
         }
     });
 
@@ -856,14 +881,6 @@ function addCrosswalk(cx, cz) {
 
 function addRoadSegment(width, depth, x, z) {
     addBox({ width, height: 0.08, depth, x, y: 0.04, z, material: materials.asphalt, cast: false, receive: true });
-
-    if (width > depth) {
-        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
-        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
-    } else {
-        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
-        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
-    }
 }
 
 function addRoadMarking(width, depth, x, z) {
