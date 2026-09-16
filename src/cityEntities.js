@@ -207,7 +207,7 @@ export class PoleManager {
                 p.userData.durability = Math.max(0, p.userData.durability - 85);
             }
             
-            if (p.userData.durability <= 0 && p.userData.status !== 'quebrado') {
+            if (p.userData.durability <= 0 && p.userData.status !== 'quebrado' && p.userData.status !== 'manutencao') {
                 p.userData.status = 'quebrado';
                 if (p.userData.bulbMat) p.userData.bulbMat.emissiveIntensity = 0;
             }
