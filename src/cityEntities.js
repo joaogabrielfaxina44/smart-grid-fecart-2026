@@ -571,28 +571,27 @@ export class TrafficManager {
     }
 
     update(delta) {
-        const bounds = 250;
+        const bounds = 450;
         
         this.vehicles.forEach(v => {
             v.mesh.position.addScaledVector(v.dir, v.speed * delta);
             
             if (v.dir.x > 0 && v.mesh.position.x > bounds) v.mesh.position.x = -bounds;
             else if (v.dir.x < 0 && v.mesh.position.x < -bounds) v.mesh.position.x = bounds;
-            
-            if (v.dir.z > 0 && v.mesh.position.z > bounds) v.mesh.position.z = -bounds;
+            else if (v.dir.z > 0 && v.mesh.position.z > bounds) v.mesh.position.z = -bounds;
             else if (v.dir.z < 0 && v.mesh.position.z < -bounds) v.mesh.position.z = bounds;
         });
-        
+
         this.pedestrians.forEach(p => {
             p.mesh.position.addScaledVector(p.dir, p.speed * delta);
-            p.animTime += delta * p.speed * 4;
+            p.animTime += delta * 15;
             
-            p.mesh.position.y = Math.abs(Math.sin(p.animTime)) * 0.08;
+            // Animating legs
+            p.mesh.children[0].rotation.x = Math.sin(p.animTime) * 0.5;
             
             if (p.dir.x > 0 && p.mesh.position.x > bounds) p.mesh.position.x = -bounds;
             else if (p.dir.x < 0 && p.mesh.position.x < -bounds) p.mesh.position.x = bounds;
-            
-            if (p.dir.z > 0 && p.mesh.position.z > bounds) p.mesh.position.z = -bounds;
+            else if (p.dir.z > 0 && p.mesh.position.z > bounds) p.mesh.position.z = -bounds;
             else if (p.dir.z < 0 && p.mesh.position.z < -bounds) p.mesh.position.z = bounds;
         });
     }
