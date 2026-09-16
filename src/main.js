@@ -795,8 +795,32 @@ function createRoadNetwork() {
     ROAD_COORDS.forEach((coord) => {
         addRoadSegment(WORLD_SIZE, ROAD_WIDTH, 0, coord);
         addRoadSegment(ROAD_WIDTH, WORLD_SIZE, coord, 0);
-        addRoadMarking(WORLD_SIZE, 0.2, 0, coord);
-        addRoadMarking(0.2, WORLD_SIZE, coord, 0);
+
+        // Linhas de centro tracejadas: desenha entre cruzamentos, nunca sobre eles
+        const halfInter = ROAD_WIDTH / 2 + 1.0; // margem de segurança
+        const dashLen = 3.0;
+        const dashGap = 3.0;
+
+        // Para cada par de cruzamentos consecutivos, gera traços horizontais (ao longo de X)
+        for (let c = 0; c < ROAD_COORDS.length - 1; c++) {
+            const segStart = ROAD_COORDS[c] + halfInter;
+            const segEnd   = ROAD_COORDS[c + 1] - halfInter;
+            let pos = segStart + dashLen / 2;
+            while (pos + dashLen / 2 <= segEnd) {
+                addBox({ width: dashLen, height: 0.03, depth: 0.18, x: pos, y: 0.13, z: coord, material: materials.roadMarking, cast: false, receive: false });
+                pos += dashLen + dashGap;
+            }
+        }
+        // Traços verticais (ao longo de Z)
+        for (let r = 0; r < ROAD_COORDS.length - 1; r++) {
+            const segStart = ROAD_COORDS[r] + halfInter;
+            const segEnd   = ROAD_COORDS[r + 1] - halfInter;
+            let pos = segStart + dashLen / 2;
+            while (pos + dashLen / 2 <= segEnd) {
+                addBox({ width: 0.18, height: 0.03, depth: dashLen, x: coord, y: 0.13, z: pos, material: materials.roadMarking, cast: false, receive: false });
+                pos += dashLen + dashGap;
+            }
+        }
     });
 
     // Faixas de pedestre em cada cruzamento
