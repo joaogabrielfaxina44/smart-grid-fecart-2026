@@ -798,6 +798,36 @@ function createRoadNetwork() {
         addRoadMarking(WORLD_SIZE, 0.2, 0, coord);
         addRoadMarking(0.2, WORLD_SIZE, coord, 0);
     });
+
+    // Faixas de pedestre em cada cruzamento
+    ROAD_COORDS.forEach((rx) => {
+        ROAD_COORDS.forEach((rz) => {
+            addCrosswalk(rx, rz);
+        });
+    });
+}
+
+function addCrosswalk(cx, cz) {
+    const stripeW = 0.55;
+    const stripeD = 2.2;
+    const gap = 0.55;
+    const numStripes = 5;
+    const totalW = numStripes * stripeW + (numStripes - 1) * gap;
+    const startOffset = -totalW / 2;
+    // distância do centro do cruzamento até a borda da faixa de pedestres
+    const edgeDist = ROAD_WIDTH / 2 + 0.1;
+
+    for (let i = 0; i < numStripes; i++) {
+        const p = startOffset + i * (stripeW + gap) + stripeW / 2;
+        // Faixa Norte
+        addBox({ width: stripeW, height: 0.04, depth: stripeD, x: cx + p, y: 0.14, z: cz - edgeDist - stripeD / 2, material: materials.roadMarking, cast: false, receive: false });
+        // Faixa Sul
+        addBox({ width: stripeW, height: 0.04, depth: stripeD, x: cx + p, y: 0.14, z: cz + edgeDist + stripeD / 2, material: materials.roadMarking, cast: false, receive: false });
+        // Faixa Oeste
+        addBox({ width: stripeD, height: 0.04, depth: stripeW, x: cx - edgeDist - stripeD / 2, y: 0.14, z: cz + p, material: materials.roadMarking, cast: false, receive: false });
+        // Faixa Leste
+        addBox({ width: stripeD, height: 0.04, depth: stripeW, x: cx + edgeDist + stripeD / 2, y: 0.14, z: cz + p, material: materials.roadMarking, cast: false, receive: false });
+    }
 }
 
 function addRoadSegment(width, depth, x, z) {
