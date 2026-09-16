@@ -180,7 +180,8 @@ export class PoleManager {
 
         // Pole state
         poleGroup.userData.id = this.poles.length;
-        poleGroup.userData.durability = 100;
+        // Variabilidade inicial para que os postes não quebrem todos juntos
+        poleGroup.userData.durability = 60 + Math.random() * 40; 
         poleGroup.userData.status = 'operando'; // operando, quebrado, inativo, manutencao
         poleGroup.userData.alertMesh = alertMesh;
         
@@ -201,7 +202,8 @@ export class PoleManager {
             const p = this.poles[i];
             
             // Reduz em blocos grandes para que alguns postes cheguem a <20 rapidamente, em vez de todos degradarem lentamente juntos.
-            if (p.userData.status !== 'manutencao' && Math.random() < 0.001 * delta) {
+            // Reduzido o rate de quebra automática para que o usuário possa usar o botão de simular quebra
+            if (p.userData.status !== 'manutencao' && Math.random() < 0.0002 * delta) {
                 p.userData.durability = Math.max(0, p.userData.durability - 85);
             }
             
@@ -712,25 +714,51 @@ export class RepairManager {
     }
 
     update(delta, timeElapsed) {
+        // IA Self-Healing Automática: Enviar caminhões para postes quebrados
+        for (let i = 0; i < this.poleManager.poles.length; i++) {
+            const p = this.poleManager.poles[i];
+            if (p.userData.status === 'quebrado') {
+                this.dispatchRepair(p);
+            }
+        }
+
         for (let i = this.repairTrucks.length - 1; i >= 0; i--) {
             const t = this.repairTrucks[i];
             
             t.mesh.userData.siren.material.color.setHex((Math.floor(timeElapsed * 10) % 2 === 0) ? 0xff0000 : 0x0000ff);
             
-            if (t.state === 'driving_to') {
-                const dir = new THREE.Vector3().subVectors(t.targetPos, t.mesh.position);
-                const dist = dir.length();
-                if (dist < 1) {
-                    t.state = 'repairing';
-                    t.timer = 5; 
-                    t.worker.position.copy(t.mesh.position);
-                    t.worker.position.z -= 2; 
-                    t.worker.visible = true;
+            if (t.state === 'driving_to' || t.state === 'returning') {
+                const target = t.state === 'driving_to' ? t.targetPos : this.depotPos;
+                
+                const dx = target.x - t.mesh.position.x;
+                const dz = target.z - t.mesh.position.z;
+                
+                let dir = new THREE.Vector3();
+                if (Math.abs(dx) > 1.0) {
+                    dir.set(Math.sign(dx), 0, 0);
+                } else if (Math.abs(dz) > 1.0) {
+                    dir.set(0, 0, Math.sign(dz));
+                    t.mesh.position.x = target.x; // Trava o X para fazer curva perfeita de 90 graus
                 } else {
-                    dir.normalize();
-                    t.mesh.position.addScaledVector(dir, 15 * delta);
-                    t.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
+                    if (t.state === 'driving_to') {
+                        t.state = 'repairing';
+                        t.timer = 5; 
+                        t.worker.position.copy(t.mesh.position);
+                        t.worker.position.z -= 2; 
+                        t.worker.visible = true;
+                    } else {
+                        this.scene.remove(t.mesh);
+                        this.scene.remove(t.worker);
+                        this.repairTrucks.splice(i, 1);
+                    }
+                    continue;
                 }
+                
+                t.mesh.position.addScaledVector(dir, 20 * delta);
+                
+                // Rotação instantânea para a direção do movimento
+                t.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
+                
             } else if (t.state === 'repairing') {
                 t.timer -= delta;
                 if (t.timer <= 0) {
@@ -741,18 +769,6 @@ export class RepairManager {
                     }
                     t.state = 'returning';
                     t.worker.visible = false;
-                }
-            } else if (t.state === 'returning') {
-                const dir = new THREE.Vector3().subVectors(this.depotPos, t.mesh.position);
-                const dist = dir.length();
-                if (dist < 1) {
-                    this.scene.remove(t.mesh);
-                    this.scene.remove(t.worker);
-                    this.repairTrucks.splice(i, 1);
-                } else {
-                    dir.normalize();
-                    t.mesh.position.addScaledVector(dir, 15 * delta);
-                    t.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
                 }
             }
         }

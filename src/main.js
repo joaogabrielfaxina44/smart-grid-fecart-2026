@@ -2039,12 +2039,12 @@ function updatePoleUI() {
         repairBtn.innerText = 'Em Manutenção...';
         repairBtn.disabled = true;
         repairBtn.style.opacity = '0.5';
-    } else if (dur === 100) {
-        repairBtn.innerText = 'Componente Saudável';
+    } else if (st === 'quebrado' || dur <= 0) {
+        repairBtn.innerText = 'Quebrado (Aguardando IA)';
         repairBtn.disabled = true;
         repairBtn.style.opacity = '0.5';
     } else {
-        repairBtn.innerText = 'Solicitar Manutenção';
+        repairBtn.innerText = 'Simular Quebra do Poste';
         repairBtn.disabled = false;
         repairBtn.style.opacity = '1.0';
     }
@@ -2057,8 +2057,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('pole-ui-repair-btn').addEventListener('click', () => {
-        if (activePole && repairManager) {
-            repairManager.dispatchRepair(activePole);
+        if (activePole) {
+            activePole.userData.durability = 0;
+            // The AI will automatically dispatch the truck in the next frame
             updatePoleUI();
         }
     });
