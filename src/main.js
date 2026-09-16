@@ -720,7 +720,7 @@ function buildInstancedRooftopsAndDetails() {
 
 const GRID_SIZE = 15;
 const GRID_RADIUS = Math.floor(GRID_SIZE / 2);
-const BLOCK_SIZE = 42;
+const BLOCK_SIZE = 20;
 const ROAD_WIDTH = 10;
 const SIDEWALK_WIDTH = 2.4;
 const ROAD_STEP = BLOCK_SIZE + ROAD_WIDTH;
@@ -798,37 +798,18 @@ function createRoadNetwork() {
         addRoadMarking(WORLD_SIZE, 0.2, 0, coord);
         addRoadMarking(0.2, WORLD_SIZE, coord, 0);
     });
-    
-    ROAD_COORDS.forEach((x) => {
-        ROAD_COORDS.forEach((z) => {
-            addCrosswalk(x, z);
-        });
-    });
-}
-
-function addCrosswalk(x, z) {
-    const cwSize = ROAD_WIDTH;
-    const stripeW = 0.5;
-    const stripeGap = 0.5;
-    const stripes = Math.floor(cwSize / (stripeW + stripeGap));
-    
-    // Position of the crosswalk line relative to intersection center
-    const offset = ROAD_WIDTH / 2; 
-    
-    for (let i = 0; i < stripes; i++) {
-        // Center the stripes
-        const p = -cwSize/2 + stripeW + i * (stripeW + stripeGap);
-        // N/S crosswalks (horizontal stripes along X axis)
-        addBox({ width: stripeW, height: 0.03, depth: 3, x: x + p, y: 0.12, z: z - offset, material: materials.roadMarking, cast: false, receive: false });
-        addBox({ width: stripeW, height: 0.03, depth: 3, x: x + p, y: 0.12, z: z + offset, material: materials.roadMarking, cast: false, receive: false });
-        // E/W crosswalks (vertical stripes along Z axis)
-        addBox({ width: 3, height: 0.03, depth: stripeW, x: x + offset, y: 0.12, z: z + p, material: materials.roadMarking, cast: false, receive: false });
-        addBox({ width: 3, height: 0.03, depth: stripeW, x: x - offset, y: 0.12, z: z + p, material: materials.roadMarking, cast: false, receive: false });
-    }
 }
 
 function addRoadSegment(width, depth, x, z) {
     addBox({ width, height: 0.08, depth, x, y: 0.04, z, material: materials.asphalt, cast: false, receive: true });
+
+    if (width > depth) {
+        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
+        addBox({ width, height: 0.12, depth: SIDEWALK_WIDTH, x, y: 0.11, z: z + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, material: materials.sidewalk, cast: false, receive: true });
+    } else {
+        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x - ROAD_WIDTH / 2 - SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
+        addBox({ width: SIDEWALK_WIDTH, height: 0.12, depth, x: x + ROAD_WIDTH / 2 + SIDEWALK_WIDTH / 2, y: 0.11, z, material: materials.sidewalk, cast: false, receive: true });
+    }
 }
 
 function addRoadMarking(width, depth, x, z) {
@@ -961,16 +942,6 @@ function createBlockBase(block) {
         height: 0.16,
         depth: BLOCK_SIZE
     });
-    
-    // Draw sidewalks around the block, stopping at intersections
-    const hw = BLOCK_SIZE / 2;
-    const sw = SIDEWALK_WIDTH;
-    const offset = hw - sw / 2;
-    addBox({ width: BLOCK_SIZE, height: 0.18, depth: sw, x: block.x, y: 0.12, z: block.z - offset, material: materials.sidewalk, cast: false, receive: true });
-    addBox({ width: BLOCK_SIZE, height: 0.18, depth: sw, x: block.x, y: 0.12, z: block.z + offset, material: materials.sidewalk, cast: false, receive: true });
-    addBox({ width: sw, height: 0.18, depth: BLOCK_SIZE - sw * 2, x: block.x - offset, y: 0.12, z: block.z, material: materials.sidewalk, cast: false, receive: true });
-    addBox({ width: sw, height: 0.18, depth: BLOCK_SIZE - sw * 2, x: block.x + offset, y: 0.12, z: block.z, material: materials.sidewalk, cast: false, receive: true });
-    
     cityStats.blocks += 1;
 }
 
@@ -981,9 +952,9 @@ function createResidentialBlock(block) {
     cityGroup.add(group);
 
     const lots = [
-        [-11.0, -11.0], [11.0, -11.0],
-        [-11.0, 0.0],  [11.0, 0.0],
-        [-11.0, 11.0],  [11.0, 11.0]
+        [-6.5, -6.5], [6.5, -6.5],
+        [-6.5, 0.0],  [6.5, 0.0],
+        [-6.5, 6.5],  [6.5, 6.5]
     ];
     const local = seededRandom(3000 + block.index * 41);
 
@@ -1033,9 +1004,9 @@ function createMixedUrbanBlock(block) {
 
     const distance = Math.hypot(block.row - GRID_RADIUS, block.col - GRID_RADIUS);
     const lots = [
-        [-11.0, -11.0], [11.0, -11.0],
-        [-11.0, 0.0],  [11.0, 0.0],
-        [-11.0, 11.0],  [11.0, 11.0]
+        [-6.5, -6.5], [6.5, -6.5],
+        [-6.5, 0.0],  [6.5, 0.0],
+        [-6.5, 6.5],  [6.5, 6.5]
     ];
 
     lots.forEach(([lx, lz], lotIndex) => {
@@ -1073,8 +1044,8 @@ function createCommercialBlock(block) {
         createOfficeTower(group, block.x, block.z, block.index, height, block.index);
         
         // Plazas / small elements
-        if (noise(block.index, 2, 2) > 0.5) createShopHouse(group, block.x - 12, block.z - 12, block.index+1, 1, block.index);
-        if (noise(block.index, 3, 3) > 0.5) createShopHouse(group, block.x + 12, block.z + 12, block.index+2, 1, block.index);
+        if (noise(block.index, 2, 2) > 0.5) createShopHouse(group, block.x - 6.5, block.z - 6.5, block.index+1, 1, block.index);
+        if (noise(block.index, 3, 3) > 0.5) createShopHouse(group, block.x + 6.5, block.z + 6.5, block.index+2, 1, block.index);
         
         createStreetTrees(block.x, block.z, 3);
     } else if (nLayout < 0.6) {
@@ -1082,16 +1053,16 @@ function createCommercialBlock(block) {
         const height2 = (distance < 2.0 ? 30 : 25) + noise(block.index, 5, 5) * 35;
         
         if (noise(block.index, 6, 6) > 0.5) {
-            createOfficeTower(group, block.x - 9, block.z, block.index + 10, height1, block.index);
-            createOfficeTower(group, block.x + 9, block.z, block.index + 11, height2, block.index);
+            createOfficeTower(group, block.x - 4.5, block.z, block.index + 10, height1, block.index);
+            createOfficeTower(group, block.x + 4.5, block.z, block.index + 11, height2, block.index);
         } else {
-            createOfficeTower(group, block.x, block.z - 9, block.index + 12, height1, block.index);
-            createOfficeTower(group, block.x, block.z + 9, block.index + 13, height2, block.index);
+            createOfficeTower(group, block.x, block.z - 4.5, block.index + 12, height1, block.index);
+            createOfficeTower(group, block.x, block.z + 4.5, block.index + 13, height2, block.index);
         }
     } else {
         // Layout 3: 4 or 5 corner towers (classic dense)
         const towerLots = [
-            [-11, -11], [11, -11], [-11, 11], [11, 11], [0, 0]
+            [-6.5, -6.5], [6.5, -6.5], [-6.5, 6.5], [6.5, 6.5], [0, 0]
         ];
         const towerCount = distance < 2.0 ? 5 : 4;
 
@@ -1268,9 +1239,9 @@ function createIndustrialBlock(block) {
 
     const buildings = 2 + Math.floor(noise(block.row, block.col, 90) * 2);
     for (let i = 0; i < buildings; i += 1) {
-        const x = block.x - 10.0 + i * 10.0 + (noise(block.row + i, block.col, 91) - 0.5) * 4.0;
+        const x = block.x - 6.0 + i * 8.0 + (noise(block.row + i, block.col, 91) - 0.5) * 1.7;
         const z = block.z + (noise(block.row, block.col + i, 92) - 0.5) * 8.0;
-        const width = 12.0 + noise(block.row, block.col, i * 10) * 6.0;
+        const width = 7.5 + noise(block.row + i, block.col, 93) * 4.6;
         const depth = 7.0 + noise(block.row, block.col + i, 94) * 5.0;
         const height = 4.4 + noise(block.row + i, block.col + i, 95) * 4.2;
 
