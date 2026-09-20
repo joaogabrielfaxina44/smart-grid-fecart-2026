@@ -4,11 +4,9 @@ import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents
 import { VFXManager } from './vfx.js';
 import { StorytellingTour } from './storytelling.js';
 import { PoleManager, TrafficManager, RepairManager } from './cityEntities.js';
-import { materials, detailMats, powerMats, unitBoxGeometry, trunkGeometry, canopyGeometry, waterTankGeo } from './sharedAssets.js';
+import { materials, powerMats } from './sharedAssets.js';
 import { cityGroup, powerGridObjects, windTurbines, cityStats, backendNodePositions } from './sceneState.js';
-import { noise, seededRandom } from './utils.js';
-import { getBlockFacadeMaterial, addBuildingWithFacade, createRoofDetails } from './buildingRenderer.js';
-import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, createResidentialBlock, createOfficeTower, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
+import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
 import { createPowerGrid, createTransmissionLines } from './powerGridRenderer.js';
 let poleManager, trafficManager, repairManager;
 
