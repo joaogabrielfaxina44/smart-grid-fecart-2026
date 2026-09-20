@@ -4,9 +4,10 @@ import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents
 import { VFXManager } from './vfx.js';
 import { StorytellingTour } from './storytelling.js';
 import { PoleManager, TrafficManager, RepairManager } from './cityEntities.js';
-import { materials, powerMats } from './sharedAssets.js';
+import { materials, powerMats, groundLightPoolMaterial } from './sharedAssets.js';
 import { cityGroup, powerGridObjects, windTurbines, cityStats, backendNodePositions } from './sceneState.js';
-import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
+import { allFacadeMaterials } from './buildingRenderer.js';
+import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, WORLD_SIZE, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
 import { createPowerGrid, createTransmissionLines } from './powerGridRenderer.js';
 let poleManager, trafficManager, repairManager;
 
@@ -1029,13 +1030,11 @@ function updateSmoothDayNightCycle(delta) {
 
     // Janelas dos Edifícios e Casas (Apenas as janelas acendem à noite!)
     const windowGlow = nightFactor * 1.8;
-    allFacadeMaterials.forEach(mat => {
-        mat.emissiveIntensity = windowGlow;
-    });
-
-    // Luzes dos Carros (Faróis e Lanternas)
-    if (carLightMaterial) carLightMaterial.opacity = Math.min(1.0, 0.4 + nightFactor * 0.6);
-    if (carTailMaterial)  carTailMaterial.opacity  = Math.min(1.0, 0.4 + nightFactor * 0.6);
+    if (allFacadeMaterials && allFacadeMaterials.length) {
+        allFacadeMaterials.forEach(mat => {
+            mat.emissiveIntensity = windowGlow;
+        });
+    }
 }
 
 function handleResize() {
