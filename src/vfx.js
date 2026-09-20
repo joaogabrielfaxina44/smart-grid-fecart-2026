@@ -129,7 +129,10 @@ export class VFXManager {
         }
 
         // Camera Shake
-        let shakeOffset = new THREE.Vector3(0, 0, 0);
+        this._shakeOffset = this._shakeOffset || new THREE.Vector3();
+        let shakeOffset = this._shakeOffset;
+        shakeOffset.set(0, 0, 0);
+
         if (this.shakeIntensity > 0) {
             shakeOffset.x = (Math.random() - 0.5) * this.shakeIntensity;
             shakeOffset.y = (Math.random() - 0.5) * this.shakeIntensity;

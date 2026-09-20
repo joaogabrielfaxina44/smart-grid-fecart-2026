@@ -269,7 +269,8 @@ export class PoleManager {
                     }
                 } else if (p.currentIntensity > 0.001) {
                     p.currentIntensity = 0;
-                    this.lampBulbIMesh.setColorAt(i, new THREE.Color(0, 0, 0));
+                    colorTmp.setHex(0x000000);
+                    this.lampBulbIMesh.setColorAt(i, colorTmp);
                     this.dummy.scale.set(0, 0, 0);
                     this.dummy.updateMatrix();
                     this.poolIMesh.setMatrixAt(i, this.dummy.matrix);

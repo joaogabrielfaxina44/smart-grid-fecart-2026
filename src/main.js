@@ -833,7 +833,8 @@ function animate() {
                 const targetVelocity = moveDirection.multiplyScalar(baseSpeed);
                 flyVelocity.lerp(targetVelocity, Math.min(1, delta * 10));
             } else {
-                flyVelocity.lerp(new THREE.Vector3(0, 0, 0), Math.min(1, delta * 14));
+                if (!animate._zeroVector) animate._zeroVector = new THREE.Vector3();
+                flyVelocity.lerp(animate._zeroVector, Math.min(1, delta * 14));
                 if (flyVelocity.lengthSq() < 0.02) flyVelocity.set(0, 0, 0);
             }
 
@@ -957,7 +958,14 @@ function updateSmoothDayNightCycle(delta) {
     const nightFactor = globalNightFactor;
 
     // Interpolação suave de 24h para Cor do Céu e Névoa
-    const currentSkyColor = new THREE.Color();
+    if (!updateSmoothDayNightCycle._currentSkyColor) {
+        updateSmoothDayNightCycle._currentSkyColor = new THREE.Color();
+        updateSmoothDayNightCycle._sunColorStart = new THREE.Color(0xf59e0b);
+        updateSmoothDayNightCycle._sunColorEnd = new THREE.Color(0xfff3d7);
+        updateSmoothDayNightCycle._sunColor = new THREE.Color();
+    }
+    const currentSkyColor = updateSmoothDayNightCycle._currentSkyColor;
+    
     if (h >= 0 && h < 5.2) {
         currentSkyColor.copy(colorNight);
     } else if (h >= 5.2 && h < 6.3) {
@@ -995,7 +1003,11 @@ function updateSmoothDayNightCycle(delta) {
     // Intensidades e Tonalidades das Luzes
     if (sunLight) {
         sunLight.intensity = THREE.MathUtils.lerp(0.0, 3.0, sunFactor);
-        const sunColor = new THREE.Color().lerpColors(new THREE.Color(0xf59e0b), new THREE.Color(0xfff3d7), sunFactor);
+        const sunColor = updateSmoothDayNightCycle._sunColor.lerpColors(
+            updateSmoothDayNightCycle._sunColorStart, 
+            updateSmoothDayNightCycle._sunColorEnd, 
+            sunFactor
+        );
         sunLight.color.copy(sunColor);
     }
 

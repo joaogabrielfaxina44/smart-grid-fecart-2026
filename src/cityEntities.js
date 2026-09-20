@@ -472,7 +472,11 @@ export class RepairManager {
                 const dx = target.x - t.mesh.position.x;
                 const dz = target.z - t.mesh.position.z;
                 
-                let dir = new THREE.Vector3();
+                // Use preallocated vector to avoid GC pauses
+                this._dirDummy = this._dirDummy || new THREE.Vector3();
+                let dir = this._dirDummy;
+                dir.set(0, 0, 0);
+                
                 if (Math.abs(dx) > 1.0) {
                     dir.set(Math.sign(dx), 0, 0);
                 } else if (Math.abs(dz) > 1.0) {
