@@ -236,3 +236,5 @@ export function addBuildingWithFacade({ width, height, depth, x, z, seed, type, 
 
     return mesh;
 }
+
+initSharedFacadeMaterials();

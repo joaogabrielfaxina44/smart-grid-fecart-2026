@@ -58,6 +58,7 @@ export class PoleManager {
         const pole = {
             id: this.poles.length,
             x, z, angleRad, options,
+            position: new THREE.Vector3(x, 0, z),
             durability: 60 + Math.random() * 40,
             status: 'operando',
             targetIntensity: 0.1,
