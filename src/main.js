@@ -1030,10 +1030,13 @@ function updateSmoothDayNightCycle(delta) {
 
     // Janelas dos Edifícios e Casas (Apenas as janelas acendem à noite!)
     const windowGlow = nightFactor * 1.8;
-    if (allFacadeMaterials && allFacadeMaterials.length) {
-        allFacadeMaterials.forEach(mat => {
-            mat.emissiveIntensity = windowGlow;
-        });
+    if (Math.abs(windowGlow - (updateSmoothDayNightCycle._lastGlow || 0)) > 0.01) {
+        updateSmoothDayNightCycle._lastGlow = windowGlow;
+        if (allFacadeMaterials && allFacadeMaterials.length) {
+            allFacadeMaterials.forEach(mat => {
+                mat.emissiveIntensity = windowGlow;
+            });
+        }
     }
 }
 

@@ -167,7 +167,16 @@ export class PoleManager {
         let needsUpdatePool = false;
         let needsUpdateAlert = false;
 
-        const colorTmp = new THREE.Color();
+        if (!this._colorTmp) {
+            this._colorTmp = new THREE.Color();
+            this._pGroupMatrix = new THREE.Matrix4();
+            this._posVec = new THREE.Vector3();
+        }
+        const colorTmp = this._colorTmp;
+        const pGroupMatrix = this._pGroupMatrix;
+        const posVec = this._posVec;
+
+        const isNight = nightFactor > 0.05;
 
         for (let i = 0; i < this.poles.length; i++) {
             const p = this.poles[i];
@@ -179,80 +188,102 @@ export class PoleManager {
                 p.status = 'quebrado';
             }
             
-            const lerpFactor = 1.0 - (p.durability / 100.0);
-            colorTmp.lerpColors(this.colorNormal, this.colorWarning, lerpFactor);
-            this.shaftIMesh.setColorAt(i, colorTmp);
-            needsUpdateShaft = true;
+            // Only update shaft color if durability changed
+            if (p._lastDurability !== p.durability) {
+                p._lastDurability = p.durability;
+                const lerpFactor = 1.0 - (p.durability / 100.0);
+                colorTmp.lerpColors(this.colorNormal, this.colorWarning, lerpFactor);
+                this.shaftIMesh.setColorAt(i, colorTmp);
+                needsUpdateShaft = true;
+            }
 
+            // Alert triangle
             if (p.durability < 20) {
                 this.dummy.position.set(0, 8.5, 0);
                 this.dummy.rotation.set(0, timeElapsed * 2, 0);
                 this.dummy.scale.set(1, 1, 1);
-                const pGroupMatrix = new THREE.Matrix4().makeTranslation(p.x, 0, p.z);
+                pGroupMatrix.makeTranslation(p.x, 0, p.z);
                 this.dummy.updateMatrix();
                 this.dummy.applyMatrix4(pGroupMatrix);
                 this.alertIMesh.setMatrixAt(i, this.dummy.matrix);
                 needsUpdateAlert = true;
-            } else {
-                this.dummy.scale.set(0,0,0);
+                p._alertVisible = true;
+            } else if (p._alertVisible) {
+                this.dummy.scale.set(0, 0, 0);
+                this.dummy.updateMatrix();
                 this.alertIMesh.setMatrixAt(i, this.dummy.matrix);
                 needsUpdateAlert = true;
+                p._alertVisible = false;
             }
 
             if (p.options.hasStreetlight) {
-                if (p.status === 'operando' && nightFactor > 0.1) {
-                    if (i % 4 === this.frameCount % 4) {
+                if (p.status === 'operando' && isNight) {
+                    if (i % 6 === this.frameCount % 6) {
                         let active = false;
                         const px = p.x, pz = p.z;
-                        if (cameraPos && (px-cameraPos.x)**2 + (pz-cameraPos.z)**2 < maxDistSq) {
+                        if (cameraPos && (px - cameraPos.x)**2 + (pz - cameraPos.z)**2 < maxDistSq) {
                             active = true;
                         } else {
-                            for (let v of vehicles) {
-                                if ((px-v.mesh.position.x)**2 + (pz-v.mesh.position.z)**2 < maxDistSq) {
-                                    active = true; break;
+                            for (let v = 0; v < vehicles.length; v++) {
+                                const vp = vehicles[v].mesh.position;
+                                if ((px - vp.x)**2 + (pz - vp.z)**2 < maxDistSq) {
+                                    active = true;
+                                    break;
                                 }
                             }
                         }
                         p.targetIntensity = active ? 1.0 : 0.1;
                     }
                     
+                    const prevIntensity = p.currentIntensity;
                     p.currentIntensity += (p.targetIntensity - p.currentIntensity) * (delta * 4);
                     
-                    colorTmp.copy(p.emissiveColor).multiplyScalar(p.currentIntensity);
-                    this.lampBulbIMesh.setColorAt(i, colorTmp);
-                    
-                    if (p.currentIntensity > 0.05) {
-                        const newOpacity = p.currentIntensity * nightFactor * 0.8;
-                        colorTmp.set(0xffffff).multiplyScalar(newOpacity);
-                        this.poolIMesh.setColorAt(i, colorTmp);
-                        
-                        this.dummy.position.set(0, 0.06, -1.6);
-                        this.dummy.rotation.set(-Math.PI/2, 0, 0);
-                        this.dummy.scale.set(1, 1, 1);
-                        const pGroupMatrix = new THREE.Matrix4().makeRotationY(p.angleRad);
-                        pGroupMatrix.setPosition(new THREE.Vector3(p.x, 0, p.z));
-                        this.dummy.updateMatrix();
-                        this.dummy.applyMatrix4(pGroupMatrix);
-                        this.poolIMesh.setMatrixAt(i, this.dummy.matrix);
-                    } else {
-                        this.dummy.scale.set(0,0,0);
-                        this.poolIMesh.setMatrixAt(i, this.dummy.matrix);
+                    if (Math.abs(prevIntensity - p.currentIntensity) > 0.005) {
+                        colorTmp.copy(p.emissiveColor).multiplyScalar(p.currentIntensity);
+                        this.lampBulbIMesh.setColorAt(i, colorTmp);
+                        needsUpdateBulb = true;
+
+                        if (p.currentIntensity > 0.05) {
+                            const newOpacity = p.currentIntensity * nightFactor * 0.8;
+                            colorTmp.set(0xffffff).multiplyScalar(newOpacity);
+                            this.poolIMesh.setColorAt(i, colorTmp);
+                            
+                            this.dummy.position.set(0, 0.06, -1.6);
+                            this.dummy.rotation.set(-Math.PI/2, 0, 0);
+                            this.dummy.scale.set(1, 1, 1);
+                            
+                            posVec.set(p.x, 0, p.z);
+                            pGroupMatrix.makeRotationY(p.angleRad);
+                            pGroupMatrix.setPosition(posVec);
+                            this.dummy.updateMatrix();
+                            this.dummy.applyMatrix4(pGroupMatrix);
+                            this.poolIMesh.setMatrixAt(i, this.dummy.matrix);
+                            p._poolVisible = true;
+                        } else if (p._poolVisible) {
+                            this.dummy.scale.set(0, 0, 0);
+                            this.dummy.updateMatrix();
+                            this.poolIMesh.setMatrixAt(i, this.dummy.matrix);
+                            p._poolVisible = false;
+                        }
+                        needsUpdatePool = true;
                     }
-                } else {
+                } else if (p.currentIntensity > 0.001) {
                     p.currentIntensity = 0;
-                    this.lampBulbIMesh.setColorAt(i, new THREE.Color(0,0,0));
-                    this.dummy.scale.set(0,0,0);
+                    this.lampBulbIMesh.setColorAt(i, new THREE.Color(0, 0, 0));
+                    this.dummy.scale.set(0, 0, 0);
+                    this.dummy.updateMatrix();
                     this.poolIMesh.setMatrixAt(i, this.dummy.matrix);
+                    p._poolVisible = false;
+                    needsUpdateBulb = true;
+                    needsUpdatePool = true;
                 }
-                needsUpdateBulb = true;
-                needsUpdatePool = true;
             }
         }
         
-        if (needsUpdateShaft) this.shaftIMesh.instanceColor.needsUpdate = true;
-        if (needsUpdateBulb) this.lampBulbIMesh.instanceColor.needsUpdate = true;
+        if (needsUpdateShaft && this.shaftIMesh.instanceColor) this.shaftIMesh.instanceColor.needsUpdate = true;
+        if (needsUpdateBulb && this.lampBulbIMesh.instanceColor) this.lampBulbIMesh.instanceColor.needsUpdate = true;
         if (needsUpdatePool) {
-            this.poolIMesh.instanceColor.needsUpdate = true;
+            if (this.poolIMesh.instanceColor) this.poolIMesh.instanceColor.needsUpdate = true;
             this.poolIMesh.instanceMatrix.needsUpdate = true;
         }
         if (needsUpdateAlert) this.alertIMesh.instanceMatrix.needsUpdate = true;
