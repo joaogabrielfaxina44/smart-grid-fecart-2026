@@ -542,14 +542,14 @@ export class DemandResponseAgent extends BaseAgent {
         // Atualiza os fluxos de carga nas arestas antes da checagem
         grafo.calcularFluxoArestas();
 
-        // Checa se o fluxo de qualquer aresta atingiu 95% da sua capacidade máxima
+        // Checa se o fluxo de qualquer aresta atingiu 100% da sua capacidade máxima
         let arestaSobrecarregada = null;
         for (const edge of grafo.edges.values()) {
             if (!edge.status_ativa) continue;
             const cap = edge.capacidadeMax ?? edge.capacidade_maxima_kw;
             const flux = edge.cargaAtual ?? edge.fluxo_kw_atual;
             const taxa = flux / Math.max(cap, 1);
-            if (taxa >= 0.95) {
+            if (taxa >= 1.0) {
                 arestaSobrecarregada = { edge, taxa };
                 break;
             }
@@ -557,11 +557,10 @@ export class DemandResponseAgent extends BaseAgent {
 
         const demanda   = grafo.demandaTotalKw();
         const capacidade = grafo.capacidadeTotalSubestacoes();
-        const temAlerta  = estado?.alertasManutencao?.length > 0;
-        const cargaGlobal = demanda > capacidade * 0.90;
+        const cargaGlobal = demanda > capacidade * 0.95; // só aciona acima de 95% (era 90%)
         const temFalha    = [...grafo.edges.values()].some(e => !e.status_ativa);
 
-        if (!arestaSobrecarregada && !temAlerta && !cargaGlobal && !temFalha) {
+        if (!arestaSobrecarregada && !cargaGlobal && !temFalha) {
             // Restauração gradual (+5% por tick)
             for (const [nodeId, mult] of this.cortesAtivos) {
                 const node = grafo.nodes.get(nodeId);
