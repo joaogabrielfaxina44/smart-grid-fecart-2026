@@ -997,9 +997,12 @@ function syncSceneWithBackend(grafo, estado, logs) {
             if (node.tipo === 'Geração') geracaoRenovavel += Math.abs(capUsada);
 
             const statusClass = node.status_energizado ? 'is-normal' : 'is-critical';
+            let icon = node.tipo === 'Geração' ? '☀️' : '🏭';
+            if (node.nome.includes('Eólica')) icon = '🎐';
+
             const html = `<div class="list-item ${statusClass}">
                             <div>
-                                <div class="item-name">${node.nome}</div>
+                                <div class="item-name">${icon} ${node.nome}</div>
                                 <div class="item-sub">${node.tipo}</div>
                             </div>
                             <div class="item-val">${valText}</div>
@@ -1012,19 +1015,35 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
             let statusClass = 'is-normal';
             let statusText = `${Math.abs(node.demanda_kw_atual).toFixed(0)} kW`;
+            let statusBadge = '';
+            
             if (!node.status_energizado) {
                 statusClass = 'is-critical';
                 statusText = 'OFFLINE';
+                statusBadge = '🔴';
             } else if (node.sobrecarga_ativa) {
                 statusClass = 'is-warning';
+                statusBadge = '🟠';
+            } else {
+                statusBadge = '🟢';
             }
             
+            // Define o ícone com base no tipo
+            let icon = '🏘️';
+            if (node.tipo === 'Hospital') icon = '🏥';
+            if (node.tipo === 'Indústria') icon = '🏭';
+            if (node.tipo === 'Comercial' || node.tipo === 'Grandes Edifícios') icon = '🏢';
+            if (node.nome.includes('Educa')) icon = '🏫';
+            if (node.nome.includes('Data')) icon = '💻';
+
             const html = `<div class="list-item ${statusClass}">
                             <div>
-                                <div class="item-name">${node.nome}</div>
-                                <div class="item-sub">Base: ${node.demanda_base_kw} kW</div>
+                                <div class="item-name">${icon} ${node.nome}</div>
+                                <div class="item-sub">Demanda Base: ${node.demanda_base_kw} kW</div>
                             </div>
-                            <div class="item-val ${statusClass === 'is-critical' ? 'status-critical' : ''}">${statusText}</div>
+                            <div class="item-val ${statusClass === 'is-critical' ? 'status-critical' : ''}">
+                                ${statusBadge} ${statusText}
+                            </div>
                           </div>`;
             if (distList) distList.insertAdjacentHTML('beforeend', html);
         }

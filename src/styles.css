@@ -369,54 +369,131 @@ body {
 
 /* Modo Maximizado (Tela Cheia) */
 #city-dashboard.maximized {
-    width: 90vw;
-    height: 90vh;
-    max-height: 90vh;
-    top: 5vh;
-    left: 5vw;
+    width: 95vw;
+    height: 95vh;
+    max-height: 95vh;
+    top: 2.5vh;
+    left: 2.5vw;
     border-radius: 20px;
-    background: rgba(8, 12, 22, 0.95);
+    background: rgba(8, 12, 22, 0.96);
     z-index: 2000;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(56, 189, 248, 0.15);
 }
 
 #city-dashboard.maximized .dash-content-wrapper {
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    padding-bottom: 20px;
+    display: grid;
+    grid-template-columns: 350px 1fr 1fr;
+    grid-template-rows: auto auto auto 1fr;
+    gap: 20px;
+    padding: 20px 30px 30px 30px;
 }
 
 #city-dashboard.maximized .dash-header {
-    width: 100%;
-    border-radius: 20px 20px 0 0;
+    grid-column: 1 / -1;
+    background: transparent;
+    border-bottom: 2px solid rgba(56, 189, 248, 0.2);
+    padding: 10px 0 20px 0;
+    margin-bottom: 10px;
+}
+#city-dashboard.maximized .dash-header h2 {
+    font-size: 1.6rem;
+}
+#city-dashboard.maximized #dash-maximize-btn {
+    font-size: 1.6rem;
+}
+
+/* Coluna 1: Status, Gráfico, IA */
+#city-dashboard.maximized .dash-section:nth-child(2) { /* Status */
+    grid-column: 1 / 2; grid-row: 2 / 3;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+}
+#city-dashboard.maximized .dash-section:nth-child(3) { /* Gráfico */
+    grid-column: 1 / 2; grid-row: 3 / 4;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+#city-dashboard.maximized .dash-section:nth-child(6) { /* Terminal IA */
+    grid-column: 1 / 2; grid-row: 4 / 5;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+}
+
+/* Colunas 2 e 3: Fontes e Bairros */
+#city-dashboard.maximized .dash-section:nth-child(4) { /* Fontes */
+    grid-column: 2 / 3; grid-row: 2 / 5;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    display: flex; flex-direction: column;
+}
+#city-dashboard.maximized .dash-section:nth-child(5) { /* Bairros */
+    grid-column: 3 / 4; grid-row: 2 / 5;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    display: flex; flex-direction: column;
 }
 
 #city-dashboard.maximized .dash-section {
-    width: calc(50% - 10px);
-    margin: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.02);
-}
-
-#city-dashboard.maximized .dash-section:nth-child(2), /* Status Global */
-#city-dashboard.maximized .dash-section:nth-child(3) { /* Gráfico */
-    width: calc(100% - 10px);
+    border-bottom: none;
+    width: auto;
+    margin: 0;
 }
 
 #city-dashboard.maximized .chart-container {
-    width: 200px;
-    height: 200px;
+    width: 260px;
+    height: 260px;
+    margin: 20px auto;
 }
 
 #city-dashboard.maximized .scrollable-list {
-    max-height: 300px;
+    max-height: 100%;
+    flex-grow: 1;
 }
-#city-dashboard.maximized .scrollable-list.large-list {
-    max-height: 400px;
-}
+
 #city-dashboard.maximized .dash-toggle {
-    display: none; /* Esconde a alavanca de colapso quando maximizado */
+    display: none;
+}
+
+/* Scale up Typography for Maximized */
+#city-dashboard.maximized .dash-label {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    margin-bottom: 8px;
+}
+#city-dashboard.maximized .dash-val {
+    font-size: 1.25rem;
+}
+#city-dashboard.maximized .list-item {
+    padding: 12px 18px;
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+    background: rgba(255, 255, 255, 0.04);
+}
+#city-dashboard.maximized .item-name {
+    font-size: 1.15rem;
+}
+#city-dashboard.maximized .item-sub {
+    font-size: 0.85rem;
+}
+#city-dashboard.maximized .item-val {
+    font-size: 1.2rem;
+}
+#city-dashboard.maximized .ai-terminal {
+    font-size: 0.95rem;
+    padding: 15px;
+    min-height: 80px;
+    line-height: 1.5;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    text-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
 }
 
 .dash-content-wrapper {
