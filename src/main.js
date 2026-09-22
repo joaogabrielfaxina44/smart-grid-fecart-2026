@@ -506,12 +506,34 @@ function setupUI() {
         });
     }
 
-    // Toggle Dashboard Avançado
+    // Toggle Dashboard Avançado (Minimizar)
     const dashToggleBtn = document.getElementById('dash-toggle-btn');
     const dashPanel = document.getElementById('city-dashboard');
     if (dashToggleBtn && dashPanel) {
         dashToggleBtn.addEventListener('click', () => {
             dashPanel.classList.toggle('collapsed');
+        });
+    }
+
+    // Toggle Dashboard Avançado (Maximizar / Fullscreen)
+    const dashMaxBtn = document.getElementById('dash-maximize-btn');
+    if (dashMaxBtn && dashPanel) {
+        dashMaxBtn.addEventListener('click', () => {
+            dashPanel.classList.toggle('maximized');
+            if(dashPanel.classList.contains('maximized')) {
+                dashMaxBtn.innerHTML = '🗗'; // icone de restaurar
+            } else {
+                dashMaxBtn.innerHTML = '⛶'; // icone de maximizar
+            }
+        });
+    }
+
+    // 🛑 CORREÇÃO DEFINITIVA DO SCROLL PARA O DASHBOARD (Impede Zoom/Pan)
+    if (dashPanel) {
+        const stopEvent = (e) => e.stopPropagation();
+        const events = ['wheel', 'touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup', 'dblclick'];
+        events.forEach(eventType => {
+            dashPanel.addEventListener(eventType, stopEvent, { passive: false });
         });
     }
 

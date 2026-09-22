@@ -366,11 +366,72 @@ body {
     transform: translateX(calc(-100% + 24px)); /* Deixa apenas a alavanca amostra */
 }
 
+/* Modo Maximizado (Tela Cheia) */
+#city-dashboard.maximized {
+    width: 90vw;
+    height: 90vh;
+    max-height: 90vh;
+    top: 5vh;
+    left: 5vw;
+    border-radius: 20px;
+    background: rgba(8, 12, 22, 0.95);
+    z-index: 2000;
+}
+
+#city-dashboard.maximized .dash-content-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding-bottom: 20px;
+}
+
+#city-dashboard.maximized .dash-header {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+}
+
+#city-dashboard.maximized .dash-section {
+    width: calc(50% - 10px);
+    margin: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+#city-dashboard.maximized .dash-section:nth-child(2), /* Status Global */
+#city-dashboard.maximized .dash-section:nth-child(3) { /* Gráfico */
+    width: calc(100% - 10px);
+}
+
+#city-dashboard.maximized .chart-container {
+    width: 200px;
+    height: 200px;
+}
+
+#city-dashboard.maximized .scrollable-list {
+    max-height: 300px;
+}
+#city-dashboard.maximized .scrollable-list.large-list {
+    max-height: 400px;
+}
+#city-dashboard.maximized .dash-toggle {
+    display: none; /* Esconde a alavanca de colapso quando maximizado */
+}
+
 .dash-content-wrapper {
     flex-grow: 1;
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 2px;
+}
+
+/* Efeito Hover nas listas para ficar "Mais bonito e completo" */
+.list-item {
+    transition: background 0.2s, transform 0.2s;
+}
+.list-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateX(4px);
 }
 
 /* Custom Scrollbar for dashboard */
