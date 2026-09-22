@@ -487,12 +487,22 @@ function triggerBlackout(targetGroup) {
 let sceneLightState = 'day';
 
 function setupUI() {
-    const toggleBtn = document.getElementById('toggle-panel-btn');
     const panel = document.getElementById('control-panel');
+    const headerBar = document.getElementById('panel-header-bar');
 
-    if (toggleBtn && panel) {
-        toggleBtn.addEventListener('click', () => {
-            panel.classList.toggle('hidden');
+    if (headerBar && panel) {
+        // Clicar no cabeçalho inteiro minimiza/maximiza
+        headerBar.addEventListener('click', () => {
+            panel.classList.toggle('collapsed');
+        });
+    }
+
+    // 🛑 CORREÇÃO DEFINITIVA DO SCROLL (Impede Zoom/Pan na câmera do Three.js)
+    if (panel) {
+        const stopEvent = (e) => e.stopPropagation();
+        const events = ['wheel', 'touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup', 'dblclick'];
+        events.forEach(eventType => {
+            panel.addEventListener(eventType, stopEvent, { passive: false });
         });
     }
 

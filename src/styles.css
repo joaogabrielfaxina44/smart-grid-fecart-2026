@@ -73,36 +73,28 @@ body {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 
-.glass-panel {
+#control-panel {
     pointer-events: auto;
-    position: absolute;
-    z-index: 100;
-    top: 80px;
+    position: fixed;
+    z-index: 1000;
+    top: 20px;
     right: 20px;
-    width: 340px;
-    background: rgba(18, 25, 30, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    width: 350px;
+    max-height: 85vh;
+    background: rgba(10, 15, 30, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     color: #e0e5e9;
-    max-height: calc(100vh - 100px);
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
-    transform-origin: top right;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
-.glass-panel.hidden {
-    transform: scale(0.95) translateY(-20px);
-    opacity: 0;
-    pointer-events: none;
-}
-
-.panel-header {
-    padding: 20px;
+#control-panel .panel-header {
+    padding: 15px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
 }
@@ -114,7 +106,7 @@ body {
     letter-spacing: 0.5px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
 }
 
 .panel-header h2 span {
@@ -132,8 +124,39 @@ body {
     color: #94a3b8;
 }
 
+.panel-body-wrapper {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#control-panel.collapsed .panel-body-wrapper {
+    grid-template-rows: 0fr;
+}
+
+#control-panel.collapsed #toggle-panel-btn {
+    transform: rotate(90deg);
+}
+
 .panel-content {
-    padding: 20px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 20px;
+}
+
+.panel-content::-webkit-scrollbar {
+    width: 4px;
+}
+.panel-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+.panel-content::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.4);
+    border-radius: 2px;
+}
+
+.panel-body-inner {
+    padding: 15px 0 20px 0;
     display: flex;
     flex-direction: column;
     gap: 24px;
