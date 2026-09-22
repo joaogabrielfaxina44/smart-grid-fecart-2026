@@ -344,6 +344,7 @@ body {
    DASHBOARD DE TELEMETRIA AVANÇADO
    ═══════════════════════════════════════════════════════════ */
 #city-dashboard {
+    pointer-events: auto;
     position: fixed;
     top: 15px;
     left: 15px;
