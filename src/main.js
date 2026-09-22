@@ -496,6 +496,15 @@ function setupUI() {
         });
     }
 
+    // Toggle Dashboard Avançado
+    const dashToggleBtn = document.getElementById('dash-toggle-btn');
+    const dashPanel = document.getElementById('city-dashboard');
+    if (dashToggleBtn && dashPanel) {
+        dashToggleBtn.addEventListener('click', () => {
+            dashPanel.classList.toggle('collapsed');
+        });
+    }
+
     // 0. Botão: Pausar / Destravar Tempo (Play/Pause)
     const btnToggleTime = document.getElementById('btn-toggle-time');
     const iconPause = document.getElementById('icon-time-pause');
@@ -916,12 +925,12 @@ function syncSceneWithBackend(grafo, estado, logs) {
         }
     }
 
-    // ── 3. Atualizar Dashboard de Telemetria ──────────────
+    // ── 3. Atualizar Dashboard de Telemetria Avançado ──────────────
     if (estado && estado.hora !== undefined) {
         targetDecimalTime = estado.hora;
     }
     
-    // Tempo e Clima
+    // Status Global & Tempo
     const dashTime = document.getElementById('dash-time');
     const dashWeather = document.getElementById('dash-weather');
     if (dashTime) {
@@ -929,44 +938,112 @@ function syncSceneWithBackend(grafo, estado, logs) {
         const mm = Math.floor((estado.hora % 1) * 60).toString().padStart(2, '0');
         dashTime.textContent = `${hh}:${mm}`;
     }
-    if (dashWeather) dashWeather.textContent = estado.clima;
+    const weatherIcons = { 'ensolarado': '☀️', 'nublado': '☁️', 'chuvoso': '🌧️', 'tempestade': '⛈️' };
+    if (dashWeather) dashWeather.textContent = weatherIcons[estado.clima] || estado.clima;
 
-    // Carga / Capacidade
+    // Métricas
     const demandaAtual = grafo.demandaTotalKw();
     const capacidadeMax = (typeof grafo.capacidadeTotalSubestacoes === 'function') ? grafo.capacidadeTotalSubestacoes() : 9000;
-    const cargaPct = Math.min(100, Math.round((demandaAtual / capacidadeMax) * 100));
+    let geracaoRenovavel = 0;
     
-    const dashLoadText = document.getElementById('dash-load-text');
-    const dashLoadBar = document.getElementById('dash-load-bar');
-    if (dashLoadText) dashLoadText.textContent = `${demandaAtual.toFixed(0)} / ${capacidadeMax} kW`;
-    if (dashLoadBar) {
-        dashLoadBar.style.width = `${cargaPct}%`;
-        if (cargaPct > 95) dashLoadBar.style.background = '#ef4444'; // Crítico
-        else if (cargaPct > 85) dashLoadBar.style.background = '#f59e0b'; // Sobrecarga
-        else dashLoadBar.style.background = '#38bdf8'; // Normal
-    }
+    // Listas do DOM
+    const sourcesList = document.getElementById('dash-sources-list');
+    const distList = document.getElementById('dash-districts-list');
+    if (sourcesList) sourcesList.innerHTML = '';
+    if (distList) distList.innerHTML = '';
 
-    // Contagem de Setores
-    let totalSectores = 0;
-    let energizados = 0;
     let blackouts = 0;
     let sobrecargas = 0;
-    
+
     for (const node of grafo.nodes.values()) {
-        if (node.is_subestacao) continue;
-        totalSectores++;
-        if (node.status_energizado) energizados++;
-        else blackouts++;
-        
-        if (node.sobrecarga_ativa) sobrecargas++;
+        if (node.is_subestacao || node.tipo === 'Geração') {
+            // É Fonte
+            let capUsada = node.demanda_kw_atual;
+            let maxCap = node.capacidade_maxima_kw || Math.abs(node.demanda_base_kw);
+            let valText = node.is_subestacao ? `${maxCap} kW Disp.` : `${Math.abs(capUsada).toFixed(0)} kW Ger.`;
+            
+            if (node.tipo === 'Geração') geracaoRenovavel += Math.abs(capUsada);
+
+            const statusClass = node.status_energizado ? 'is-normal' : 'is-critical';
+            const html = `<div class="list-item ${statusClass}">
+                            <div>
+                                <div class="item-name">${node.nome}</div>
+                                <div class="item-sub">${node.tipo}</div>
+                            </div>
+                            <div class="item-val">${valText}</div>
+                          </div>`;
+            if (sourcesList) sourcesList.insertAdjacentHTML('beforeend', html);
+        } else {
+            // Consumidor (Bairro/Setor)
+            if (!node.status_energizado) blackouts++;
+            if (node.sobrecarga_ativa) sobrecargas++;
+
+            let statusClass = 'is-normal';
+            let statusText = `${Math.abs(node.demanda_kw_atual).toFixed(0)} kW`;
+            if (!node.status_energizado) {
+                statusClass = 'is-critical';
+                statusText = 'OFFLINE';
+            } else if (node.sobrecarga_ativa) {
+                statusClass = 'is-warning';
+            }
+            
+            const html = `<div class="list-item ${statusClass}">
+                            <div>
+                                <div class="item-name">${node.nome}</div>
+                                <div class="item-sub">Base: ${node.demanda_base_kw} kW</div>
+                            </div>
+                            <div class="item-val ${statusClass === 'is-critical' ? 'status-critical' : ''}">${statusText}</div>
+                          </div>`;
+            if (distList) distList.insertAdjacentHTML('beforeend', html);
+        }
     }
 
-    const dashSectors = document.getElementById('dash-sectors');
-    const dashBlackouts = document.getElementById('dash-blackouts');
-    if (dashSectors) dashSectors.textContent = `${energizados} / ${totalSectores}`;
-    if (dashBlackouts) {
-        dashBlackouts.textContent = blackouts;
-        dashBlackouts.className = blackouts > 0 ? 'dash-val status-critical' : 'dash-val status-normal';
+    const totalGerado = capacidadeMax + geracaoRenovavel;
+    const pct = Math.min(100, Math.round((demandaAtual / totalGerado) * 100));
+
+    // Atualiza Textos do Gráfico
+    const elPct = document.getElementById('chart-pct');
+    const elDem = document.getElementById('dash-dem-val');
+    const elCap = document.getElementById('dash-cap-val');
+    if (elPct) {
+        elPct.textContent = `${pct}%`;
+        elPct.style.color = pct > 95 ? '#ef4444' : (pct > 85 ? '#f59e0b' : '#fff');
+    }
+    if (elDem) elDem.textContent = `${demandaAtual.toFixed(0)} kW`;
+    if (elCap) elCap.textContent = `${totalGerado.toFixed(0)} kW`;
+
+    // Gráfico Chart.js
+    if (window.Chart) {
+        const ctx = document.getElementById('powerChart');
+        if (ctx) {
+            if (!window.powerChartInst) {
+                window.powerChartInst = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Demanda', 'Livre'],
+                        datasets: [{
+                            data: [demandaAtual, Math.max(0, totalGerado - demandaAtual)],
+                            backgroundColor: ['#38bdf8', 'rgba(255,255,255,0.05)'],
+                            borderWidth: 0,
+                            cutout: '78%'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        animation: { duration: 400 },
+                        plugins: { legend: { display: false }, tooltip: { enabled: false } }
+                    }
+                });
+            } else {
+                let color = '#38bdf8';
+                if (pct > 95) color = '#ef4444';
+                else if (pct > 85) color = '#f59e0b';
+                
+                window.powerChartInst.data.datasets[0].data = [demandaAtual, Math.max(0, totalGerado - demandaAtual)];
+                window.powerChartInst.data.datasets[0].backgroundColor[0] = color;
+                window.powerChartInst.update();
+            }
+        }
     }
 
     // Status Global
@@ -978,40 +1055,48 @@ function syncSceneWithBackend(grafo, estado, logs) {
 
     if (dashStatus) {
         if (blackouts > 0) {
-            dashStatus.textContent = '🔴 FALHA NA REDE';
+            dashStatus.innerHTML = '🔴 FALHA NA REDE';
             dashStatus.className = 'dash-val status-critical';
         } else if (hasContingency) {
-            dashStatus.textContent = '🔄 CONTINGÊNCIA';
+            dashStatus.innerHTML = '🔄 CONTINGÊNCIA';
             dashStatus.className = 'dash-val status-healing';
-        } else if (sobrecargas > 0 || cargaPct > 85) {
-            dashStatus.textContent = '🟠 SOBRECARGA';
+        } else if (sobrecargas > 0 || pct > 85) {
+            dashStatus.innerHTML = '🟠 SOBRECARGA';
             dashStatus.className = 'dash-val status-warning';
         } else {
-            dashStatus.textContent = '🟢 NORMAL';
+            dashStatus.innerHTML = '🟢 NORMAL';
             dashStatus.className = 'dash-val status-normal';
         }
     }
 
-    // Agentes de IA Ativos
+    // Terminal IA e Pílulas
     const agentsList = document.getElementById('dash-ai-agents');
+    const termText = document.getElementById('ai-terminal-text');
     if (agentsList && logs) {
-        // Detecta quais agentes atuaram neste tick baseando-se nos logs
-        const activeAgents = new Set(['Monitoramento Base']);
+        const activeAgents = new Set(['Monitoramento']);
         for (const log of logs) {
             if (log.includes('Pico Noturno')) activeAgents.add('Peak Hour Agent');
-            if (log.includes('CORTE DE EMERGÊNCIA') || log.includes('Restaurando')) activeAgents.add('Demand Response Agent');
-            if (log.includes('SUPERAQUECIMENTO') || log.includes('estabilizada')) activeAgents.add('Predictive Maint Agent');
-            if (log.includes('Self-Healing') || log.includes('Rota') || log.includes('Blackout')) activeAgents.add('Self-Healing Agent');
-            if (log.includes('Iluminação')) activeAgents.add('Smart Lighting Agent');
+            if (log.includes('CORTE DE EMERGÊNCIA') || log.includes('Restaurando')) activeAgents.add('Demand Response');
+            if (log.includes('SUPERAQUECIMENTO') || log.includes('estabilizada')) activeAgents.add('Predictive Maint');
+            if (log.includes('Self-Healing') || log.includes('Rota') || log.includes('Blackout')) activeAgents.add('Self-Healing');
+            if (log.includes('Iluminação')) activeAgents.add('Smart Lighting');
         }
 
         agentsList.innerHTML = '';
         activeAgents.forEach(ag => {
             const pill = document.createElement('span');
-            pill.className = ag === 'Monitoramento Base' ? 'ai-agent-pill normal' : 'ai-agent-pill active';
+            pill.className = ag === 'Monitoramento' ? 'ai-agent-pill normal' : 'ai-agent-pill active';
             pill.textContent = ag;
             agentsList.appendChild(pill);
         });
+
+        if (logs.length > 0 && termText) {
+            // Filtrar log mais relevante
+            const lastLog = logs[logs.length - 1];
+            termText.textContent = lastLog.replace(/\[.*?\] /, ''); // Remove o [AgentName]
+        } else if (termText && (!termText.textContent || termText.textContent.includes('Aguardando'))) {
+            termText.textContent = "Sistema estável. Aguardando eventos...";
+        }
     }
 
     // ── 4. Processar logs da IA via novo sistema de notificações ──

@@ -7,6 +7,7 @@
     <meta name="description" content="Modulo de renderizacao 3D da cidade para a simulacao Smart Grid FECART 2026">
     <link rel="stylesheet" href="src/styles.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* Modern Visual Novel UI */
         .vn-wrapper {
@@ -201,50 +202,74 @@
             </div>
         </div>
 
-        <!-- City Dashboard de Telemetria -->
-        <div id="city-dashboard" class="dashboard-panel">
-            <div class="dash-header">
-                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                <h2>TELEMETRIA SMART GRID</h2>
-            </div>
-            
-            <div class="dash-section">
-                <div class="dash-row">
-                    <span class="dash-label">Status Global</span>
-                    <span id="dash-status" class="dash-val status-normal">🟢 NORMAL</span>
+        <!-- City Dashboard de Telemetria AVANÇADO -->
+        <div id="city-dashboard" class="dashboard-panel adv-panel">
+            <button id="dash-toggle-btn" class="dash-toggle">◁</button>
+            <div class="dash-content-wrapper">
+                <div class="dash-header adv-header">
+                    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <h2>CENTRAL DE TELEMETRIA</h2>
                 </div>
-                <div class="dash-row">
-                    <span class="dash-label">Tempo & Clima</span>
-                    <span class="dash-val"><span id="dash-time">07:00</span> | <span id="dash-weather">Ensolarado</span></span>
+                
+                <!-- Status Global & Clima -->
+                <div class="dash-section dash-flex-row">
+                    <div>
+                        <span class="dash-label">Status do Sistema</span>
+                        <div id="dash-status" class="dash-val status-normal" style="font-size: 1.1rem;">🟢 NORMAL</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <span class="dash-label">Horário | Clima</span>
+                        <div class="dash-val"><span id="dash-time">07:00</span> | <span id="dash-weather">☀️</span></div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="dash-section">
-                <div class="dash-row">
-                    <span class="dash-label">Demanda Total</span>
-                    <span id="dash-load-text" class="dash-val">0 kW</span>
+                
+                <!-- Gráfico de Balanço Energético -->
+                <div class="dash-section">
+                    <span class="dash-label">Balanço Energético (Demanda vs Capacidade)</span>
+                    <div class="chart-container">
+                        <canvas id="powerChart"></canvas>
+                        <div class="chart-center-text">
+                            <span id="chart-pct">0%</span>
+                            <span style="font-size: 0.65rem; color: #94a3b8; display:block;">CARGA</span>
+                        </div>
+                    </div>
+                    <div class="dash-flex-row" style="margin-top: 10px;">
+                        <div>
+                            <span class="dash-label">Demanda Atual</span>
+                            <div id="dash-dem-val" class="dash-val" style="color: #38bdf8;">0 kW</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <span class="dash-label">Capacidade Max</span>
+                            <div id="dash-cap-val" class="dash-val" style="color: #94a3b8;">0 kW</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="dash-progress-container">
-                    <div id="dash-load-bar" class="dash-progress-bar"></div>
-                </div>
-            </div>
 
-            <div class="dash-section">
-                <div class="dash-row">
-                    <span class="dash-label">Setores Energizados</span>
-                    <span id="dash-sectors" class="dash-val">12 / 12</span>
+                <!-- Fontes de Energia -->
+                <div class="dash-section">
+                    <span class="dash-label">Fontes de Geração (Renováveis & Rede)</span>
+                    <div id="dash-sources-list" class="scrollable-list">
+                        <!-- Gerado via JS -->
+                    </div>
                 </div>
-                <div class="dash-row">
-                    <span class="dash-label">Blackouts</span>
-                    <span id="dash-blackouts" class="dash-val status-normal">0</span>
-                </div>
-            </div>
 
-            <div class="dash-section no-border">
-                <span class="dash-label" style="display: block; margin-bottom: 8px;">Agentes Inteligentes em Ação</span>
-                <div id="dash-ai-agents" class="dash-agents-list">
-                    <!-- Preenchido via JS -->
-                    <span class="ai-agent-pill normal">Monitoramento Base</span>
+                <!-- Status dos Bairros -->
+                <div class="dash-section">
+                    <span class="dash-label">Monitoramento de Bairros e Setores</span>
+                    <div id="dash-districts-list" class="scrollable-list large-list">
+                        <!-- Gerado via JS -->
+                    </div>
+                </div>
+
+                <!-- Terminal IA -->
+                <div class="dash-section no-border">
+                    <span class="dash-label">Atividade da IA (Smart Agents)</span>
+                    <div id="dash-ai-agents" class="dash-agents-list" style="margin-bottom: 8px;">
+                        <!-- Gerado via JS -->
+                    </div>
+                    <div class="ai-terminal">
+                        <span class="terminal-prefix">>_</span> <span id="ai-terminal-text">Aguardando eventos...</span>
+                    </div>
                 </div>
             </div>
         </div>
