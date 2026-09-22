@@ -54,12 +54,18 @@ export const powerMats = {
         emissive: 0xffa024,
         emissiveIntensity: 0.0
     }),
-    wireNormal: new THREE.MeshBasicMaterial({ color: 0x1f2429 }),
-    wireGlowing: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9 }),
-    wireOverload: new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95 }),
-    wireCritical: new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 1.0 }),
-    wireBlackout: new THREE.MeshBasicMaterial({ color: 0x18181b, transparent: true, opacity: 0.8 }),
-    wireHealing: new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }),
+    // Fio normal nos postes (durante o dia, sem energia)
+    wireNormal: new THREE.MeshBasicMaterial({ color: 0x2a2f35 }),
+    // Fluxo normal de energia — azul ciano neon vibrante
+    wireGlowing: new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.95 }),
+    // Sobrecarga moderada (85-95%) — laranja âmbar
+    wireOverload: new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 1.0 }),
+    // Crítico (≥95%) — vermelho intenso pulsante
+    wireCritical: new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 1.0 }),
+    // Linha desativada / blackout — quase invisível, escuro
+    wireBlackout: new THREE.MeshBasicMaterial({ color: 0x151820, transparent: true, opacity: 0.75 }),
+    // Contingência da IA (self-healing) — ciano brilhante, distinto do normal
+    wireHealing: new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 1.0 }),
 };
 
 export function createLightPoolTexture() {

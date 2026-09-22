@@ -210,10 +210,29 @@
             <div class="hud-item">🌤️ <strong id="hud-sim-clima">ensolarado</strong></div>
         </div>
         
-        <!-- Alerts HUD -->
-        <div id="hud-alert-container" style="position: absolute; top: 60px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; z-index: 100;">
+        <!-- Alerts HUD (legado — mantido para compatibilidade) -->
+        <div id="hud-alert-container" style="display: none;">
         </div>
-        
+
+        <!-- Sistema de Notificações Cinematográfico -->
+        <div id="event-toasts"></div>
+
+        <!-- Flash de Tela (corte de energia) -->
+        <div id="screen-flash"></div>
+
+        <!-- Banner "IA Processando..." -->
+        <div id="ai-thinking-banner">
+            <div class="ai-spinner"></div>
+            <span>🤖 IA Analisando a Rede...</span>
+        </div>
+
+        <!-- Tooltip de Hover em Fios de Transmissão -->
+        <div id="wire-tooltip">
+            <span class="wt-label">⚡ Linha de Transmissão</span>
+            <span class="wt-name" id="wire-tooltip-name">—</span>
+            <span class="wt-hint">Clique para cortar energia</span>
+        </div>
+
 
         <!-- X-Ray Tooltip -->
         <div id="xray-tooltip" class="hud-pill hidden" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 100; opacity: 0; transition: opacity 0.2s;">

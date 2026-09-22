@@ -9,6 +9,7 @@ import { cityGroup, powerGridObjects, windTurbines, cityStats, backendNodePositi
 import { allFacadeMaterials } from './buildingRenderer.js';
 import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, WORLD_SIZE, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
 import { createPowerGrid, createTransmissionLines } from './powerGridRenderer.js';
+import { notificationSystem } from './notificationSystem.js';
 let poleManager, trafficManager, repairManager;
 
 const container = document.getElementById('canvas-container');
@@ -245,9 +246,105 @@ scene.add(cityGroup);
 
 const raycaster = new THREE.Raycaster();
 raycaster.params.Line.threshold = 1.5;
+raycaster.params.Points = { threshold: 1.0 };
 const mouse = new THREE.Vector2();
+const mouseScreen = new THREE.Vector2(); // posição em pixels do mouse
+let hoveredTransmissionLine = null; // linha de transmissão sob o cursor
+let wireTooltipEl = null;
+let wireTooltipNameEl = null;
+
+// Nomes amigáveis (espelha o NAME_MAP do notificationSystem)
+const NODE_DISPLAY_NAMES = {
+    'Subestacao_Central':       'Subestação Central',
+    'Subestacao_Norte':         'Subestação Norte',
+    'Subestacao_Sul':           'Subestação Sul',
+    'Hospital_Prontomed':       'Hospital Prontomed',
+    'Bairro_Residencial_A':     'Bairro Residencial A',
+    'Bairro_Residencial_B':     'Bairro Residencial B',
+    'Centro_Comercial':         'Centro Comercial',
+    'Shopping_Metropolitano':   'Shopping Metropolitano',
+    'Zona_Industrial_A':        'Zona Industrial',
+    'Data_Center':              'Data Center',
+    'Escolas':                  'Distrito Escolar',
+    'Fazenda_Solar':            'Fazenda Solar'
+};
+function nodeName(id) { return NODE_DISPLAY_NAMES[id] || id || '?'; }
+
+// ── Hover sobre linhas de transmissão ─────────────────────────
+function setupHover() {
+    wireTooltipEl = document.getElementById('wire-tooltip');
+    wireTooltipNameEl = document.getElementById('wire-tooltip-name');
+
+    renderer.domElement.addEventListener('mousemove', (event) => {
+        if (isDraggingMouse) {
+            if (hoveredTransmissionLine) {
+                hoveredTransmissionLine = null;
+                if (wireTooltipEl) wireTooltipEl.classList.remove('visible');
+                renderer.domElement.style.cursor = '';
+            }
+            return;
+        }
+
+        mouseScreen.x = event.clientX;
+        mouseScreen.y = event.clientY;
+
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        // Testar apenas linhas de transmissão (com backendEdgeId)
+        const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
+        if (!transLinesGroup) return;
+
+        const transmissionMeshes = transLinesGroup.children.filter(
+            c => c.userData?.backendEdgeId && c.userData?.u && c.userData?.v
+        );
+
+        const hits = raycaster.intersectObjects(transmissionMeshes, false);
+
+        if (hits.length > 0) {
+            const hit = hits[0].object;
+            if (hit !== hoveredTransmissionLine) {
+                hoveredTransmissionLine = hit;
+                renderer.domElement.style.cursor = 'crosshair';
+
+                const u = hit.userData.u;
+                const v = hit.userData.v;
+                const edge = citySimulator?.grafo?.getEdge(u, v);
+                const carga = edge ? Math.round((edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1)) * 100) : 0;
+                const status = edge?.status_ativa === false ? '⛔ INATIVA' : `${carga}% de carga`;
+
+                if (wireTooltipNameEl) wireTooltipNameEl.textContent = `${nodeName(u)} ↔ ${nodeName(v)}`;
+
+                // Atualiza hint com status da linha
+                const hintEl = wireTooltipEl?.querySelector('.wt-hint');
+                if (hintEl) {
+                    if (edge?.status_ativa === false) {
+                        hintEl.textContent = '(linha já inativa)';
+                    } else {
+                        hintEl.textContent = `${status} — Clique para cortar`;
+                    }
+                }
+            }
+
+            if (wireTooltipEl) {
+                wireTooltipEl.classList.add('visible');
+                wireTooltipEl.style.left = `${mouseScreen.x + 18}px`;
+                wireTooltipEl.style.top = `${mouseScreen.y - 40}px`;
+            }
+        } else {
+            if (hoveredTransmissionLine) {
+                hoveredTransmissionLine = null;
+                renderer.domElement.style.cursor = '';
+                if (wireTooltipEl) wireTooltipEl.classList.remove('visible');
+            }
+        }
+    });
+}
 
 function setupRaycaster() {
+    setupHover();
+
     renderer.domElement.addEventListener('click', (event) => {
         if (mouseMovedDistance > 8) return;
 
@@ -267,24 +364,87 @@ function setupRaycaster() {
 
         const intersects = raycaster.intersectObjects(interactables, false);
         if (intersects.length > 0) {
-            let target = intersects[0].object;
+            const hit = intersects[0];
+            let target = hit.object;
 
+            // ── Clique em Linha de Transmissão ───────────────
             if (target.userData?.backendEdgeId && target.userData.u && target.userData.v) {
-                console.log(`[3D Click] Falha simulada pelo clique na linha: ${target.userData.u} ↔ ${target.userData.v}`);
-                citySimulator.simularFalha(target.userData.u, target.userData.v);
+                const u = target.userData.u;
+                const v = target.userData.v;
+                const edge = citySimulator?.grafo?.getEdge(u, v);
+
+                if (edge && !edge.status_ativa) {
+                    notificationSystem.show('info', 'Linha já Inativa',
+                        `${nodeName(u)} ↔ ${nodeName(v)} já está desligada.`, 3000);
+                    return;
+                }
+
+                // Ponto de clique no espaço 3D
+                const clickPoint = hit.point.clone();
+                triggerLineBreak(u, v, clickPoint);
                 return;
             }
 
+            // ── Clique em Fio de Distribuição (postes locais) ─
             while (target.parent && !target.parent.userData.isGridNode) {
                 target = target.parent;
             }
             if (target.parent && target.parent.userData.isGridNode) {
-                triggerBlackout(target.parent);
+                const clickPoint = hit.point.clone();
+                triggerLocalBlackout(target.parent, clickPoint);
             }
         }
     });
 }
 
+// ── Corte de Linha de Transmissão (com resposta da IA) ───────
+function triggerLineBreak(u, v, clickPoint) {
+    console.log(`[3D Click] Cortando linha de transmissão: ${u} ↔ ${v}`);
+
+    // 1. VFX imediato
+    notificationSystem.triggerScreenFlash('red', 400);
+    vfxManager.createArcFlash(clickPoint);
+    // Faíscas adicionais
+    setTimeout(() => vfxManager.createSparks(clickPoint), 80);
+
+    // 2. Notificação de corte imediata
+    notificationSystem.showLineCut(u, v);
+
+    // 3. Banner "IA processando" (aparece logo após)
+    setTimeout(() => {
+        notificationSystem.showAiThinking(1600);
+    }, 400);
+
+    // 4. Executar a falha na IA (e capturar os logs)
+    setTimeout(() => {
+        const logs = citySimulator.simularFalha(u, v);
+
+        // 5. Após a IA processar, mostrar as decisões com delay dramático
+        setTimeout(() => {
+            notificationSystem.processLogs(logs, true);
+
+            // 6. Se houver rota de contingência, animar o healing pulse
+            const transLinesGroup = cityGroup.children.find(c => c.name === 'transmission_lines');
+            if (transLinesGroup) {
+                for (const edge of citySimulator.grafo.edges.values()) {
+                    if (edge.is_contingencia) {
+                        const p1 = backendNodePositions[edge.origem];
+                        const p2 = backendNodePositions[edge.destino];
+                        if (p1 && p2) {
+                            // Cria o pulso de cura ao longo da rota de contingência
+                            vfxManager.createHealingPulse([
+                                p1.clone().setY(p1.y + 2),
+                                p2.clone().setY(p2.y + 2)
+                            ]);
+                        }
+                    }
+                }
+            }
+        }, 1200);
+    }, 200);
+}
+
+// ── Blackout Local (fios de poste) ────────────────────────────
 function setWireMaterial(group, matKey) {
     group.children.forEach(child => {
         if ((child.isLine || child.isLineSegments) && child.userData[matKey]) {
@@ -293,16 +453,35 @@ function setWireMaterial(group, matKey) {
     });
 }
 
-function triggerBlackout(targetGroup) {
-    if (!targetGroup.userData.active) return;
+function triggerLocalBlackout(targetGroup, clickPoint) {
+    if (!targetGroup.userData.active) {
+        notificationSystem.show('info', 'Setor Já Desligado',
+            'Este trecho de fios já está sem energia.', 2500);
+        return;
+    }
     targetGroup.userData.active = false;
     setWireMaterial(targetGroup, 'blackoutMat');
 
+    // Apaga lâmpadas de rua no grupo
     targetGroup.traverse(child => {
-        if (child.name === "streetLampBulb" && child.material) {
+        if (child.name === 'streetLampBulb' && child.material) {
             child.material.emissive.setHex(0x000000);
         }
     });
+
+    // VFX no ponto de clique
+    if (clickPoint) {
+        notificationSystem.triggerScreenFlash('red', 300);
+        vfxManager.createSparks(clickPoint);
+    }
+
+    // Notificação
+    notificationSystem.showSectorBlackout('Setor de Distribuição Local');
+}
+
+// Alias legado para compatibilidade com código existente
+function triggerBlackout(targetGroup) {
+    triggerLocalBlackout(targetGroup, null);
 }
 
 let sceneLightState = 'day';
@@ -358,8 +537,11 @@ function setupUI() {
         const noIndustria = citySimulator.grafo.nodes.get('Zona_Industrial_A');
         if (noIndustria) {
             noIndustria.sobrecarga_ativa = true;
-            console.log(`[Painel] Sobrecarga aplicada na Zona_Industrial_A.`);
         }
+        // Flash de aviso
+        notificationSystem.triggerScreenFlash('red', 300);
+        notificationSystem.show('overload', 'Sobrecarga Aplicada',
+            'Zona Industrial A operando em 250% da demanda base.\nA IA vai acionar o corte de emergência.', 6000);
         if (citySimulator) citySimulator.tick(0);
     });
 
@@ -372,13 +554,31 @@ function setupUI() {
             citySimulator.estado.hora = 20;
             citySimulator.tick(0);
         }
-        console.log('[Painel] Botão Forçar Noite clicado (20:00).');
+        notificationSystem.show('info', 'Hora Avançada para 20:00',
+            'Pico noturno ativo. Demanda residencial em alta.', 4000);
     });
 
-    // 4. Botão: Falha na Usina (Blackout / Self-Healing)
+    // 4. Botão: Falha na Usina (Blackout / Self-Healing) — com sequência dramática completa
     document.getElementById('btn-falha-usina')?.addEventListener('click', () => {
-        console.log('[Painel] Botão Falha na Usina clicado. Rompendo aresta Subestacao_Central <-> Hospital_Prontomed...');
-        if (citySimulator) citySimulator.simularFalha('Subestacao_Central', 'Hospital_Prontomed');
+        const u = 'Subestacao_Central';
+        const v = 'Hospital_Prontomed';
+        const edge = citySimulator?.grafo?.getEdge(u, v);
+
+        // Ponto central da cena como posição para o VFX
+        const vfxPoint = new THREE.Vector3(0, 25, 0);
+        const p1 = backendNodePositions[u];
+        const p2 = backendNodePositions[v];
+        if (p1 && p2) {
+            vfxPoint.lerpVectors(p1, p2, 0.5);
+        }
+
+        if (edge && !edge.status_ativa) {
+            notificationSystem.show('info', 'Linha Já Inativa',
+                'Subestação Central ↔ Hospital Prontomed já está desligada.\nResetar a cidade para nova simulação.', 4000);
+            return;
+        }
+
+        triggerLineBreak(u, v, vfxPoint);
     });
 
     // 5. Botão: Resetar Cidade
@@ -388,6 +588,7 @@ function setupUI() {
         currentDecimalTime = 7.0;
         lastCheckedHour = 7;
         if (citySimulator) citySimulator.resetar();
+        notificationSystem.show('success', 'Cidade Resetada', 'Rede elétrica restaurada ao estado inicial (07:00).', 4000);
     });
 
     // 6. Tour Guiada
@@ -718,38 +919,17 @@ function syncSceneWithBackend(grafo, estado, logs) {
     // ── 3. Atualizar HUD com dados da simulação ──────────────
     const hudDemanda = document.getElementById('hud-sim-demanda');
     const hudClima = document.getElementById('hud-sim-clima');
-    const hudAlert = document.getElementById('hud-alert-container');
     if (estado && estado.hora !== undefined) {
         targetDecimalTime = estado.hora;
     }
     if (hudDemanda) hudDemanda.textContent = `${grafo.demandaTotalKw().toFixed(0)} kW`;
     if (hudClima)   hudClima.textContent   = estado.clima;
-    
-    // Processar logs para exibição no HUD
-    if (hudAlert && logs && logs.length > 0) {
-        logs.forEach(log => {
-            if (log.includes('Pico Noturno') || log.includes('CORTE DE EMERGÊNCIA') || log.includes('SUPERAQUECIMENTO') || log.includes('Blackout') || log.includes('Romper')) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'hud-pill';
-                alertDiv.style.backgroundColor = 'rgba(200, 30, 30, 0.85)';
-                alertDiv.style.color = '#fff';
-                alertDiv.style.pointerEvents = 'none';
-                
-                let icon = '⚠️';
-                if (log.includes('Pico Noturno')) icon = '🌙';
-                if (log.includes('CORTE DE EMERGÊNCIA')) icon = '⚡';
-                if (log.includes('SUPERAQUECIMENTO')) icon = '🔥';
-                if (log.includes('Blackout')) icon = '🔌';
-                
-                alertDiv.innerHTML = `<div class="hud-item">${icon} <strong>${log}</strong></div>`;
-                hudAlert.appendChild(alertDiv);
-                
-                // Remove após 8 segundos
-                setTimeout(() => {
-                    if (hudAlert.contains(alertDiv)) hudAlert.removeChild(alertDiv);
-                }, 8000);
-            }
-        });
+
+    // ── 4. Processar logs da IA via novo sistema de notificações ──
+    // (apenas para ticks automáticos de hora, não para cliques — esses têm sua
+    //  própria sequência de notificações com delay dramático em triggerLineBreak)
+    if (logs && logs.length > 0) {
+        notificationSystem.processLogs(logs, false);
     }
 }
 
@@ -860,14 +1040,24 @@ function animate() {
         orbitControls.update();
     }
 
-    // Animação de pulsação para as linhas de energia Mesh
-    if (powerMats.wireCritical) powerMats.wireCritical.opacity = 0.6 + Math.sin(now * 0.012) * 0.4;
-    if (powerMats.wireGlowing) powerMats.wireGlowing.opacity = 0.7 + Math.sin(now * 0.005) * 0.2;
-    if (powerMats.wireOverload) powerMats.wireOverload.opacity = 0.6 + Math.sin(now * 0.008) * 0.3;
+    // Animação de pulsação para as linhas de energia (Mesh)
+    // wireCritical: pisca rápido e intenso — alerta máximo
+    if (powerMats.wireCritical) powerMats.wireCritical.opacity = 0.55 + Math.abs(Math.sin(now * 0.018)) * 0.45;
+    // wireGlowing: brilho suave e fluido — fluxo normal
+    if (powerMats.wireGlowing) powerMats.wireGlowing.opacity = 0.80 + Math.sin(now * 0.004) * 0.15;
+    // wireOverload: pulsação moderada — alerta de sobrecarga
+    if (powerMats.wireOverload) powerMats.wireOverload.opacity = 0.65 + Math.sin(now * 0.01) * 0.30;
+    // wireHealing: brilha suavemente — contingência ativa
+    if (powerMats.wireHealing) powerMats.wireHealing.opacity = 0.75 + Math.sin(now * 0.007) * 0.25;
 
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
     updateSmoothDayNightCycle(delta);
-    vfxManager.update(delta, camera);
+
+    // VFX update (retorna camera shake offset)
+    const shakeOffset = vfxManager.update(delta, camera);
+    if (shakeOffset && (shakeOffset.x !== 0 || shakeOffset.y !== 0 || shakeOffset.z !== 0)) {
+        camera.position.add(shakeOffset);
+    }
 
     renderer.render(scene, camera);
 }

@@ -108,7 +108,7 @@ export class CityGraph {
         this.desativarAresta(origemId, destinoId);
 
         // Limpa contingencias antigas
-        for (const edge of this.arestas.values()) {
+        for (const edge of this.edges.values()) {
             edge.is_contingencia = false;
         }
 
