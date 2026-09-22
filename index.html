@@ -201,15 +201,54 @@
             </div>
         </div>
 
-        <!-- Smart Grid Simulation Status HUD -->
-        <div id="hud-simulation" class="hud-pill" style="top: 12px; bottom: auto; left: 50%; transform: translateX(-50%); gap: 12px;">
-            <div class="hud-item">⏰ <strong id="hud-sim-hora">07:00</strong></div>
-            <div class="hud-divider"></div>
-            <div class="hud-item">⚡ <strong id="hud-sim-demanda">— kW</strong></div>
-            <div class="hud-divider"></div>
-            <div class="hud-item">🌤️ <strong id="hud-sim-clima">ensolarado</strong></div>
+        <!-- City Dashboard de Telemetria -->
+        <div id="city-dashboard" class="dashboard-panel">
+            <div class="dash-header">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                <h2>TELEMETRIA SMART GRID</h2>
+            </div>
+            
+            <div class="dash-section">
+                <div class="dash-row">
+                    <span class="dash-label">Status Global</span>
+                    <span id="dash-status" class="dash-val status-normal">🟢 NORMAL</span>
+                </div>
+                <div class="dash-row">
+                    <span class="dash-label">Tempo & Clima</span>
+                    <span class="dash-val"><span id="dash-time">07:00</span> | <span id="dash-weather">Ensolarado</span></span>
+                </div>
+            </div>
+            
+            <div class="dash-section">
+                <div class="dash-row">
+                    <span class="dash-label">Demanda Total</span>
+                    <span id="dash-load-text" class="dash-val">0 kW</span>
+                </div>
+                <div class="dash-progress-container">
+                    <div id="dash-load-bar" class="dash-progress-bar"></div>
+                </div>
+            </div>
+
+            <div class="dash-section">
+                <div class="dash-row">
+                    <span class="dash-label">Setores Energizados</span>
+                    <span id="dash-sectors" class="dash-val">12 / 12</span>
+                </div>
+                <div class="dash-row">
+                    <span class="dash-label">Blackouts</span>
+                    <span id="dash-blackouts" class="dash-val status-normal">0</span>
+                </div>
+            </div>
+
+            <div class="dash-section no-border">
+                <span class="dash-label" style="display: block; margin-bottom: 8px;">Agentes Inteligentes em Ação</span>
+                <div id="dash-ai-agents" class="dash-agents-list">
+                    <!-- Preenchido via JS -->
+                    <span class="ai-agent-pill normal">Monitoramento Base</span>
+                </div>
+            </div>
         </div>
-        
+
         <!-- Alerts HUD (legado — mantido para compatibilidade) -->
         <div id="hud-alert-container" style="display: none;">
         </div>

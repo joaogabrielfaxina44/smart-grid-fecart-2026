@@ -916,14 +916,103 @@ function syncSceneWithBackend(grafo, estado, logs) {
         }
     }
 
-    // ── 3. Atualizar HUD com dados da simulação ──────────────
-    const hudDemanda = document.getElementById('hud-sim-demanda');
-    const hudClima = document.getElementById('hud-sim-clima');
+    // ── 3. Atualizar Dashboard de Telemetria ──────────────
     if (estado && estado.hora !== undefined) {
         targetDecimalTime = estado.hora;
     }
-    if (hudDemanda) hudDemanda.textContent = `${grafo.demandaTotalKw().toFixed(0)} kW`;
-    if (hudClima)   hudClima.textContent   = estado.clima;
+    
+    // Tempo e Clima
+    const dashTime = document.getElementById('dash-time');
+    const dashWeather = document.getElementById('dash-weather');
+    if (dashTime) {
+        const hh = Math.floor(estado.hora).toString().padStart(2, '0');
+        const mm = Math.floor((estado.hora % 1) * 60).toString().padStart(2, '0');
+        dashTime.textContent = `${hh}:${mm}`;
+    }
+    if (dashWeather) dashWeather.textContent = estado.clima;
+
+    // Carga / Capacidade
+    const demandaAtual = grafo.demandaTotalKw();
+    const capacidadeMax = (typeof grafo.capacidadeTotalSubestacoes === 'function') ? grafo.capacidadeTotalSubestacoes() : 9000;
+    const cargaPct = Math.min(100, Math.round((demandaAtual / capacidadeMax) * 100));
+    
+    const dashLoadText = document.getElementById('dash-load-text');
+    const dashLoadBar = document.getElementById('dash-load-bar');
+    if (dashLoadText) dashLoadText.textContent = `${demandaAtual.toFixed(0)} / ${capacidadeMax} kW`;
+    if (dashLoadBar) {
+        dashLoadBar.style.width = `${cargaPct}%`;
+        if (cargaPct > 95) dashLoadBar.style.background = '#ef4444'; // Crítico
+        else if (cargaPct > 85) dashLoadBar.style.background = '#f59e0b'; // Sobrecarga
+        else dashLoadBar.style.background = '#38bdf8'; // Normal
+    }
+
+    // Contagem de Setores
+    let totalSectores = 0;
+    let energizados = 0;
+    let blackouts = 0;
+    let sobrecargas = 0;
+    
+    for (const node of grafo.nodes.values()) {
+        if (node.is_subestacao) continue;
+        totalSectores++;
+        if (node.status_energizado) energizados++;
+        else blackouts++;
+        
+        if (node.sobrecarga_ativa) sobrecargas++;
+    }
+
+    const dashSectors = document.getElementById('dash-sectors');
+    const dashBlackouts = document.getElementById('dash-blackouts');
+    if (dashSectors) dashSectors.textContent = `${energizados} / ${totalSectores}`;
+    if (dashBlackouts) {
+        dashBlackouts.textContent = blackouts;
+        dashBlackouts.className = blackouts > 0 ? 'dash-val status-critical' : 'dash-val status-normal';
+    }
+
+    // Status Global
+    const dashStatus = document.getElementById('dash-status');
+    let hasContingency = false;
+    for (const edge of grafo.edges.values()) {
+        if (edge.is_contingencia) hasContingency = true;
+    }
+
+    if (dashStatus) {
+        if (blackouts > 0) {
+            dashStatus.textContent = '🔴 FALHA NA REDE';
+            dashStatus.className = 'dash-val status-critical';
+        } else if (hasContingency) {
+            dashStatus.textContent = '🔄 CONTINGÊNCIA';
+            dashStatus.className = 'dash-val status-healing';
+        } else if (sobrecargas > 0 || cargaPct > 85) {
+            dashStatus.textContent = '🟠 SOBRECARGA';
+            dashStatus.className = 'dash-val status-warning';
+        } else {
+            dashStatus.textContent = '🟢 NORMAL';
+            dashStatus.className = 'dash-val status-normal';
+        }
+    }
+
+    // Agentes de IA Ativos
+    const agentsList = document.getElementById('dash-ai-agents');
+    if (agentsList && logs) {
+        // Detecta quais agentes atuaram neste tick baseando-se nos logs
+        const activeAgents = new Set(['Monitoramento Base']);
+        for (const log of logs) {
+            if (log.includes('Pico Noturno')) activeAgents.add('Peak Hour Agent');
+            if (log.includes('CORTE DE EMERGÊNCIA') || log.includes('Restaurando')) activeAgents.add('Demand Response Agent');
+            if (log.includes('SUPERAQUECIMENTO') || log.includes('estabilizada')) activeAgents.add('Predictive Maint Agent');
+            if (log.includes('Self-Healing') || log.includes('Rota') || log.includes('Blackout')) activeAgents.add('Self-Healing Agent');
+            if (log.includes('Iluminação')) activeAgents.add('Smart Lighting Agent');
+        }
+
+        agentsList.innerHTML = '';
+        activeAgents.forEach(ag => {
+            const pill = document.createElement('span');
+            pill.className = ag === 'Monitoramento Base' ? 'ai-agent-pill normal' : 'ai-agent-pill active';
+            pill.textContent = ag;
+            agentsList.appendChild(pill);
+        });
+    }
 
     // ── 4. Processar logs da IA via novo sistema de notificações ──
     // (apenas para ticks automáticos de hora, não para cliques — esses têm sua

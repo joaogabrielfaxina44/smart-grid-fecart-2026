@@ -318,16 +318,130 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   DASHBOARD DE TELEMETRIA
+   ═══════════════════════════════════════════════════════════ */
+#city-dashboard {
+    position: fixed;
+    top: 15px;
+    left: 20px;
+    width: 280px;
+    background: rgba(8, 14, 28, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(56, 189, 248, 0.1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 400;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+}
+
+#city-dashboard .dash-header {
+    background: rgba(56, 189, 248, 0.15);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+#city-dashboard .dash-header h2 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #38bdf8;
+}
+
+#city-dashboard .dash-section {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#city-dashboard .dash-section.no-border {
+    border-bottom: none;
+}
+
+#city-dashboard .dash-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+#city-dashboard .dash-row:last-child {
+    margin-bottom: 0;
+}
+
+#city-dashboard .dash-label {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#city-dashboard .dash-val {
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+/* Cores de status */
+.status-normal { color: #22c55e; }
+.status-warning { color: #f59e0b; }
+.status-critical { color: #ef4444; }
+.status-healing { color: #00ffff; }
+
+/* Barra de progresso de carga */
+.dash-progress-container {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.dash-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #38bdf8;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* Lista de Agentes IA */
+.dash-agents-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ai-agent-pill {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(255,255,255,0.1);
+    color: #cbd5e1;
+}
+
+.ai-agent-pill.normal { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4); }
+.ai-agent-pill.active { background: rgba(167, 139, 250, 0.2); color: #c4b5fd; border: 1px solid rgba(167, 139, 250, 0.4); box-shadow: 0 0 8px rgba(167, 139, 250, 0.4); }
+
+/* ═══════════════════════════════════════════════════════════
    SISTEMA DE NOTIFICAÇÕES CINEMATOGRÁFICO
    ═══════════════════════════════════════════════════════════ */
 
-/* Container geral de toasts — canto superior esquerdo */
+/* Container geral de toasts — canto inferior esquerdo agora */
 #event-toasts {
     position: fixed;
-    top: 70px;
+    bottom: 20px;
     left: 20px;
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse; /* Novas notificações entram por baixo */
     gap: 10px;
     z-index: 500;
     pointer-events: none;
