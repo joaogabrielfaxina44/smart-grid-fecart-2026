@@ -218,6 +218,7 @@ export function addBox({ width, height, depth, x, y = height / 2, z, material, p
 }
 
 function createTiledBoxGeometry(w, h, d, type) {
+    const geo = new THREE.BoxGeometry(w, h, d);
     const uv = geo.attributes.uv;
     const norm = geo.attributes.normal;
     

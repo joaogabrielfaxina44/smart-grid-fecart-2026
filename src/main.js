@@ -376,7 +376,7 @@ function setupRaycaster() {
             let current = target;
             while (current && current !== scene) {
                 if (current.name.startsWith('solar_farm') || current.name.startsWith('wind_farm') || current.name.startsWith('power_plant')) {
-                    triggerEnergySourceInfo(current, hit.point.clone());
+                    triggerEnergySourceInfo(current, hit.point.clone(), event);
                     return;
                 }
                 current = current.parent;
@@ -412,14 +412,14 @@ function setupRaycaster() {
     });
 }
 
-function triggerEnergySourceInfo(group, point) {
+function triggerEnergySourceInfo(group, point, event = null) {
     const isSolar = group.name.startsWith('solar');
     const isWind = group.name.startsWith('wind');
     const isNuclear = group.name.startsWith('power_plant');
 
     let title = '';
     let nodeNameStr = '';
-    let color = '';
+    let color = 0xffffff;
 
     if (isSolar) {
         title = 'Fazenda Solar';
@@ -466,9 +466,11 @@ function triggerEnergySourceInfo(group, point) {
     div.style.transition = 'all 0.3s ease-out';
     div.style.boxShadow = `0 4px 15px rgba(0,0,0,0.5), 0 0 10px #${color.toString(16).padStart(6, '0')}44`;
     
-    // Position near mouse
-    div.style.left = Math.min(window.innerWidth - 200, window.event.clientX + 15) + 'px';
-    div.style.top = Math.max(20, window.event.clientY - 40) + 'px';
+    // Position near mouse or screen center
+    const clientX = event?.clientX ?? (window.innerWidth / 2);
+    const clientY = event?.clientY ?? (window.innerHeight / 2);
+    div.style.left = Math.min(window.innerWidth - 200, clientX + 15) + 'px';
+    div.style.top = Math.max(20, clientY - 40) + 'px';
     
     document.body.appendChild(div);
     
