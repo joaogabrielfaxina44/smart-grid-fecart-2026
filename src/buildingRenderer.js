@@ -106,8 +106,8 @@ export function initSharedFacadeMaterials(maxAnisotropy = 1) {
                 const isShop = type === 'shop';
                 const isIndustrial = type === 'industrial';
 
-                const cols = isGlass ? 6 : (isShop ? 3 : (isIndustrial ? 3 : 5));
-                const rows = isGlass ? 8 : (isShop ? 4 : (isIndustrial ? 3 : 6));
+                const cols = isGlass ? 2 : (isShop ? 2 : (isIndustrial ? 2 : 2));
+                const rows = isGlass ? 3 : (isShop ? 2 : (isIndustrial ? 2 : 3));
                 const ww = Math.round(cw / cols * 0.62);
                 const wh = Math.round(ch / rows * 0.58);
                 const spX = Math.round(cw / cols);
@@ -217,40 +217,14 @@ export function addBox({ width, height, depth, x, y = height / 2, z, material, p
     return mesh;
 }
 
-function createTiledBoxGeometry(w, h, d, tileW = 5, tileH = 6) {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    const pos = geo.attributes.position;
-    const uv = geo.attributes.uv;
-    const norm = geo.attributes.normal;
-    for (let i = 0; i < uv.count; i++) {
-        const nx = Math.abs(norm.getX(i));
-        const ny = Math.abs(norm.getY(i));
-        const nz = Math.abs(norm.getZ(i));
-        
-        let u = uv.getX(i);
-        let v = uv.getY(i);
-        
-        if (nx > 0.5) { // Right/Left
-            uv.setXY(i, u * (d / tileW), v * (h / tileH));
-        } else if (ny > 0.5) { // Top/Bottom
-            uv.setXY(i, u * (w / tileW), v * (d / tileH));
-        } else if (nz > 0.5) { // Front/Back
-            uv.setXY(i, u * (w / tileW), v * (h / tileH));
-        }
-    }
-    return geo;
-}
-
 export function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent, roofMaterial = null, blockIndex = 0 }) {
     const wallMat = getBlockFacadeMaterial(type, seed, blockIndex);
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
 
-    // Aumentando o tamanho do tile para 15x18 (menos janelas, proporções maiores e melhores)
-    const geo = createTiledBoxGeometry(width, height, depth, 15.0, 18.0);
-
-    const mesh = new THREE.Mesh(geo, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
+    const mesh = new THREE.Mesh(unitBoxGeometry, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
     mesh.position.set(x, height / 2, z);
+    mesh.scale.set(width, height, depth);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
