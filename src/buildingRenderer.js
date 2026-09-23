@@ -246,7 +246,8 @@ export function addBuildingWithFacade({ width, height, depth, x, z, seed, type, 
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
 
-    const geo = createTiledBoxGeometry(width, height, depth, 6.0, 6.0);
+    // Aumentando o tamanho do tile para 15x18 (menos janelas, proporções maiores e melhores)
+    const geo = createTiledBoxGeometry(width, height, depth, 15.0, 18.0);
 
     const mesh = new THREE.Mesh(geo, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
     mesh.position.set(x, height / 2, z);

@@ -338,8 +338,8 @@ export class TrafficManager {
         
         this.vehicles.forEach(v => {
             let targetSpeed = v.baseSpeed;
-            const SAFE_DIST = 12;
-            const LANE_WIDTH = 4.0;
+            const SAFE_DIST = 14;
+            const LANE_WIDTH = 3.5;
             
             for (let i = 0; i < this.vehicles.length; i++) {
                 const other = this.vehicles[i];
@@ -359,14 +359,25 @@ export class TrafficManager {
             
             if (targetSpeed === 0) {
                 v.speed = Math.max(0, v.speed - 35 * delta); 
+                
+                // Sistema Anti-Deadlock: Se o carro ficar preso muito tempo, ele dá respawn
+                if (v.speed < 0.1) {
+                    v.stuckTime = (v.stuckTime || 0) + delta;
+                    if (v.stuckTime > 3.5) { // 3.5 segundos parado = congestionamento/stuck
+                        this.repositionVehicle(v);
+                        v.stuckTime = 0;
+                    }
+                }
             } else {
                 v.speed = Math.min(v.baseSpeed, v.speed + 8 * delta); 
+                v.stuckTime = 0; // Zera o timer se voltar a andar
             }
             
             v.mesh.position.addScaledVector(v.dir, v.speed * delta);
             
             if (Math.abs(v.mesh.position.x) > bounds || Math.abs(v.mesh.position.z) > bounds) {
                 this.repositionVehicle(v);
+                v.stuckTime = 0;
             }
         });
 
