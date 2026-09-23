@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { materials, detailMats, powerMats, unitBoxGeometry, trunkGeometry, canopyGeometry, waterTankGeo } from './sharedAssets.js';
-import { cityGroup, powerGridObjects, backendNodePositions, windTurbines, cityStats } from './sceneState.js';
+import { cityGroup, powerGridObjects, backendNodePositions, cityStats } from './sceneState.js';
+import { createPowerPlant, createSolarFarm, createWindFarm } from './powerSources.js';
 import { noise, seededRandom } from './utils.js';
 import { addBox, addBuildingWithFacade } from './buildingRenderer.js';
 
@@ -355,7 +356,9 @@ export function createDistricts() {
                 const addedElement = cityGroup.children[cityGroup.children.length - 1];
                 if (addedElement.isGroup && backendId) {
                     addedElement.userData.backendId = backendId;
-                    backendNodePositions[backendId] = new THREE.Vector3(block.x, 16.0, block.z);
+                    if (!addedElement.userData.isEnergySource) {
+                        backendNodePositions[backendId] = new THREE.Vector3(block.x, 16.0, block.z);
+                    }
                 }
             }
         }
@@ -701,204 +704,6 @@ function createServiceBlock(block) {
 
     addBox({ width: 8.5, height: 5.5, depth: 7.0, x: block.x - 4.5, z: block.z - 3.0, material: materials.concrete, parent: group, cast: true, receive: true });
     addBox({ width: 8.0, height: 4.0, depth: 9.0, x: block.x + 4.8, z: block.z + 3.2, material: materials.industryWall, parent: group, cast: true, receive: true });
-}
-
-function createPowerPlant(block) {
-    const group = new THREE.Group();
-    group.name = `power_plant-${block.index}`;
-    group.position.set(block.x, 0, block.z);
-    group.lookAt(0, 0, 0);
-    group.scale.set(4.0, 4.0, 4.0);
-    cityGroup.add(group);
-    
-    // Main Reactor Building
-    addBox({ width: 14, height: 8, depth: 10, x: 0, y: 4, z: -2, material: materials.darkConcrete, parent: group, cast: true, receive: true });
-    addBox({ width: 14.5, height: 0.5, depth: 10.5, x: 0, y: 8.25, z: -2, material: materials.industryRoof, parent: group, cast: true, receive: true });
-    
-    // Glowing reactor cores inside main building
-    addBox({ width: 2, height: 4, depth: 2, x: -3, y: 4, z: 4, material: materials.nuclearCore, parent: group, cast: false, receive: false });
-    addBox({ width: 2.2, height: 4.2, depth: 2.2, x: -3, y: 4, z: 4, material: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.2 }), parent: group, cast: false, receive: false });
-    addBox({ width: 2, height: 4, depth: 2, x: 3, y: 4, z: 4, material: materials.nuclearCore, parent: group, cast: false, receive: false });
-    addBox({ width: 2.2, height: 4.2, depth: 2.2, x: 3, y: 4, z: 4, material: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.2 }), parent: group, cast: false, receive: false });
-
-    // Stacks
-    const stackGeo = new THREE.CylinderGeometry(1.0, 1.4, 22, 16);
-    for (let i=0; i<3; i++) {
-        const stack = new THREE.Mesh(stackGeo, materials.darkConcrete);
-        stack.position.set(-5 + i*5, 11, -5);
-        stack.castShadow = true;
-        stack.matrixAutoUpdate = false;
-        stack.updateMatrix();
-        group.add(stack);
-        
-        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: -5 + i*5, y: 22.2, z: -5, material: materials.redLight, parent: group, cast: false, receive: false });
-    }
-
-    // Cooling Tower
-    const points = [];
-    for ( let i = 0; i <= 10; i ++ ) {
-        const y = i * 2.0;
-        const x = 4.0 - Math.sin( i * 0.15 ) * 2.0;
-        points.push( new THREE.Vector2( x, y ) );
-    }
-    const coolingTowerGeo = new THREE.LatheGeometry(points, 24);
-    const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.darkConcrete);
-    coolingTower.position.set(7, 0, 5);
-    coolingTower.castShadow = true;
-    coolingTower.matrixAutoUpdate = false;
-    coolingTower.updateMatrix();
-    group.add(coolingTower);
-    
-    // Glowing ring on cooling tower
-    const ringGeo = new THREE.TorusGeometry(3.9, 0.2, 8, 32);
-    const ring = new THREE.Mesh(ringGeo, materials.nuclearCore);
-    ring.position.set(7, 10, 5);
-    ring.rotation.x = Math.PI / 2;
-    ring.matrixAutoUpdate = false;
-    ring.updateMatrix();
-    group.add(ring);
-    
-    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: 7, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
-}
-
-function createSolarFarm(block) {
-    const group = new THREE.Group();
-    group.name = `solar_farm-${block.index}`;
-    group.position.set(block.x, 0, block.z);
-    group.lookAt(0, 0, 0);
-    cityGroup.add(group);
-
-    const rows = 26;
-    const cols = 26;
-    const spacingX = 2.8;
-    const spacingZ = 3.5;
-    const panelCount = rows * cols;
-    
-    const imesh = new THREE.InstancedMesh(unitBoxGeometry, materials.solar, panelCount);
-    imesh.castShadow = true;
-    imesh.receiveShadow = true;
-    imesh.matrixAutoUpdate = false;
-    
-    // Status lights on the edges of the panels to show "active" state
-    const ledMesh = new THREE.InstancedMesh(unitBoxGeometry, new THREE.MeshBasicMaterial({ color: 0x38bdf8 }), panelCount);
-    ledMesh.matrixAutoUpdate = false;
-    
-    const dummy = new THREE.Object3D();
-    const ledDummy = new THREE.Object3D();
-    let i = 0;
-    
-    const offsetX = (cols * spacingX) / 2;
-    const offsetZ = (rows * spacingZ) / 2;
-    
-    for (let r=0; r<rows; r++) {
-        for (let c=0; c<cols; c++) {
-            dummy.position.set(-offsetX + c * spacingX, 1.2, -offsetZ + r * spacingZ);
-            dummy.scale.set(2.4, 0.1, 1.8);
-            dummy.rotation.set(-Math.PI / 6, 0, 0); // Inclinado para cima (~30 graus)
-            dummy.updateMatrix();
-            imesh.setMatrixAt(i, dummy.matrix);
-            
-            ledDummy.position.copy(dummy.position);
-            ledDummy.position.x += 1.1; // na beirada
-            ledDummy.position.y += 0.2;
-            ledDummy.position.z -= 0.8;
-            ledDummy.scale.set(0.1, 0.1, 0.1);
-            ledDummy.updateMatrix();
-            ledMesh.setMatrixAt(i, ledDummy.matrix);
-            
-            i++;
-        }
-    }
-    imesh.instanceMatrix.needsUpdate = true;
-    imesh.updateMatrix();
-    group.add(imesh);
-    
-    ledMesh.instanceMatrix.needsUpdate = true;
-    ledMesh.updateMatrix();
-    group.add(ledMesh);
-
-    const supportMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.concrete, panelCount * 2);
-    supportMesh.matrixAutoUpdate = false;
-    i = 0;
-    for (let r=0; r<rows; r++) {
-        for (let c=0; c<cols; c++) {
-            // Front leg
-            dummy.position.set(-offsetX + c * spacingX, 0.4, -offsetZ + r * spacingZ + 0.6);
-            dummy.scale.set(0.1, 0.8, 0.1);
-            dummy.rotation.set(0, 0, 0);
-            dummy.updateMatrix();
-            supportMesh.setMatrixAt(i++, dummy.matrix);
-            
-            // Back leg
-            dummy.position.set(-offsetX + c * spacingX, 0.7, -offsetZ + r * spacingZ - 0.5);
-            dummy.scale.set(0.1, 1.4, 0.1);
-            dummy.updateMatrix();
-            supportMesh.setMatrixAt(i++, dummy.matrix);
-        }
-    }
-    supportMesh.instanceMatrix.needsUpdate = true;
-    supportMesh.updateMatrix();
-    group.add(supportMesh);
-
-    addBox({ width: 6, height: 4, depth: 5, x: offsetX + 5, y: 2, z: 0, material: materials.concrete, parent: group, cast: true, receive: true });
-    addBox({ width: 2, height: 6, depth: 2, x: offsetX + 5, y: 3, z: -3, material: powerMats.transformer, parent: group, cast: true, receive: true });
-}
-
-function createWindFarm(block) {
-    const group = new THREE.Group();
-    group.name = `wind_farm-${block.index}`;
-    group.position.set(block.x, 0, block.z);
-    group.lookAt(0, 0, 0);
-    cityGroup.add(group);
-
-    const rows = 8;
-    const cols = 8;
-    const spacing = 14;
-    const offsetX = (cols * spacing) / 2;
-    const offsetZ = (rows * spacing) / 2;
-
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const x = -offsetX + c * spacing;
-            const z = -offsetZ + r * spacing;
-            
-            const towerHeight = 18;
-            const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.3, towerHeight, 12), materials.whiteTurbine);
-            tower.position.set(x, towerHeight / 2, z);
-            tower.castShadow = true;
-            tower.matrixAutoUpdate = false;
-            tower.updateMatrix();
-            group.add(tower);
-
-            const nacelle = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
-            nacelle.scale.set(0.8, 0.8, 2);
-            nacelle.position.set(x, towerHeight, z);
-            nacelle.castShadow = true;
-            nacelle.matrixAutoUpdate = false;
-            nacelle.updateMatrix();
-            group.add(nacelle);
-
-            const rotor = new THREE.Group();
-            rotor.position.set(x, towerHeight, z + 1.1);
-            
-            for (let b=0; b<3; b++) {
-                const blade = new THREE.Mesh(unitBoxGeometry, materials.whiteTurbine);
-                blade.scale.set(0.08, 7, 0.2); 
-                blade.position.set(0, 3.5, 0);
-                blade.matrixAutoUpdate = false;
-                blade.updateMatrix();
-                
-                const pivot = new THREE.Group();
-                pivot.rotation.z = (b * Math.PI * 2) / 3;
-                pivot.add(blade);
-                rotor.add(pivot);
-            }
-            group.add(rotor);
-            windTurbines.push(rotor);
-        }
-    }
-    
-    addBox({ width: 4, height: 2.5, depth: 3, x: 0, y: 1.25, z: offsetZ + 5, material: materials.industryWall, parent: group, cast: true, receive: true });
 }
 
 function createSubstation(block) {

@@ -5,10 +5,11 @@ import { VFXManager } from './vfx.js';
 import { StorytellingTour } from './storytelling.js';
 import { PoleManager, TrafficManager, RepairManager } from './cityEntities.js';
 import { materials, powerMats, groundLightPoolMaterial } from './sharedAssets.js';
-import { cityGroup, powerGridObjects, windTurbines, cityStats, backendNodePositions } from './sceneState.js';
+import { cityGroup, powerGridObjects, cityStats, backendNodePositions } from './sceneState.js';
 import { allFacadeMaterials } from './buildingRenderer.js';
 import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, WORLD_SIZE, createDistricts, createGround, createRoadNetwork, buildInstancedTrees, buildInstancedBases, buildInstancedRooftopsAndDetails } from './cityBuilder.js';
 import { createPowerGrid, createTransmissionLines } from './powerGridRenderer.js';
+import { energySources, updateEnergySources } from './powerSources.js';
 import { notificationSystem } from './notificationSystem.js';
 let poleManager, trafficManager, repairManager;
 
@@ -159,6 +160,15 @@ function updateKey(code, key, isPressed) {
 
 // Listeners de Teclado no modo capture para nunca perder soltura de teclas
 window.addEventListener('keydown', (e) => {
+    // Tecla 'U' aciona a Explosão Nuclear globalmente
+    if (e.key.toLowerCase() === 'u') {
+        if (vfxManager) {
+            console.log('[☢️] EXPLOSÃO NUCLEAR INICIADA!');
+            vfxManager.triggerNuclearExplosion(new THREE.Vector3(0, 0, 0));
+        }
+        return;
+    }
+
     if (cameraMode !== 'fly') return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     updateKey(e.code, e.key, true);
@@ -418,39 +428,42 @@ function triggerEnergySourceInfo(group, point, event = null) {
     const isNuclear = group.name.startsWith('power_plant');
 
     let title = '';
-    let nodeNameStr = '';
+    const nodeNameStr = group.userData.backendId;
     let color = 0xffffff;
 
     if (isSolar) {
         title = 'Fazenda Solar';
-        nodeNameStr = 'Fazenda_Solar';
         color = 0x38bdf8;
         vfxManager.createPulseEffect(point, color, true, 18.0);
     } else if (isWind) {
         title = 'Parque Eólico';
-        nodeNameStr = 'Parque_Eolico';
         color = 0xffffff;
         vfxManager.createPulseEffect(point, color, false, 25.0);
-        // Spin blades faster temporarily
-        window._windBoostTime = 2.0; 
+        // Rotor motion follows weather and connection state.
     } else if (isNuclear) {
         title = 'Usina Nuclear';
-        nodeNameStr = 'Usina_Nuclear';
         color = 0x4ade80;
         vfxManager.createPulseEffect(point, color, false, 20.0);
-        vfxManager.emitNuclearSteam(new THREE.Vector3(point.x, point.y + 20, point.z), 5);
+        if (citySimulator?.grafo.nodes.get(nodeNameStr)?.status_energizado) {
+            for (const outlet of group.userData.steamOutlets) {
+                vfxManager.emitNuclearSteam(outlet.getWorldPosition(new THREE.Vector3()), 2);
+            }
+        }
     }
 
     const node = citySimulator?.grafo?.nodes.get(nodeNameStr);
-    const kw = node ? Math.abs(node.demanda_kw_atual || 0).toFixed(1) : '0.0';
-    const status = node ? (node.demanda_kw_atual < 0 ? 'Gerando' : 'Inativo') : 'Desconhecido';
+    const available = node?.status_energizado && !node.em_corte_emergencia;
+    const kw = node ? (node.is_subestacao ? node.capacidade_maxima_kw : Math.abs(node.demanda_kw_atual || 0)).toFixed(1) : '0.0';
+    const status = !available ? 'Desconectado' : node.is_subestacao ? 'Disponível' : node.demanda_kw_atual < 0 ? 'Gerando' : 'Sem geração';
+    const metric = node?.is_subestacao ? 'Capacidade nominal' : 'Geração simulada';
 
     const div = document.createElement('div');
     div.className = 'energy-source-popup';
     div.innerHTML = `
         <h4 style="color: #${color.toString(16).padStart(6, '0')}; margin: 0 0 8px 0; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 4px;">${title}</h4>
         <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Status:</strong> ${status}</div>
-        <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Produção:</strong> ${kw} kW</div>
+        <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>${metric}:</strong> ${kw} kW</div>
+        <div style="font-size:0.8rem;max-width:260px;color:#b6ccd5;margin-top:8px;">${group.userData.description || ''}<br>Modelo didático · valores da simulação</div>
     `;
     div.style.position = 'absolute';
     div.style.background = 'rgba(15, 20, 30, 0.85)';
@@ -578,6 +591,22 @@ function triggerBlackout(targetGroup) {
 let sceneLightState = 'day';
 
 function setupUI() {
+    document.querySelectorAll('[data-energy-source]').forEach(button => {
+        button.addEventListener('click', () => {
+            const source = energySources.get(button.dataset.energySource);
+            if (!source) return;
+            source.updateWorldMatrix(true, true);
+            const target = source.localToWorld(source.userData.focusTarget.clone());
+            const position = source.localToWorld(source.userData.focusCamera.clone());
+            // Cameras face -Z, whereas Object3D.lookAt points +Z.
+            const view = new THREE.PerspectiveCamera();
+            view.position.copy(position); view.lookAt(target);
+            const angles = new THREE.Euler().setFromQuaternion(view.quaternion, 'YXZ');
+            setCameraMode('fly');
+            smoothGlideToImpl(position, angles.x, angles.y);
+        });
+    });
+
     const panel = document.getElementById('control-panel');
     const headerBar = document.getElementById('panel-header-bar');
 
@@ -755,6 +784,9 @@ let hemiLight = null;
 let sunLight = null;
 let moonLight = null;
 let starMaterial = null;
+const sourceShadowFocus = new THREE.Vector3();
+const sourceShadowDirection = new THREE.Vector3();
+const sourceShadowGround = new THREE.Vector3();
 
 function createLighting() {
     hemiLight = new THREE.HemisphereLight(0xdcefff, 0x6e7568, 1.45);
@@ -765,30 +797,32 @@ function createLighting() {
     sunLight.position.set(-180, 250, 130);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.camera.near = 40;
-    sunLight.shadow.camera.far = 650;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 2000;
     sunLight.shadow.camera.left = -260;
     sunLight.shadow.camera.right = 260;
     sunLight.shadow.camera.top = 260;
     sunLight.shadow.camera.bottom = -260;
     sunLight.shadow.bias = -0.0004;
-    sunLight.shadow.normalBias = 0.02;
+    sunLight.shadow.normalBias = 0.18;
     scene.add(sunLight);
+    scene.add(sunLight.target);
 
     // Luz Lunar (Noite - iluminação azulada elegante e sombras suaves à noite)
     moonLight = new THREE.DirectionalLight(0x8eaed6, 0.0);
     moonLight.position.set(180, 250, -130);
     moonLight.castShadow = true;
     moonLight.shadow.mapSize.set(1024, 1024);
-    moonLight.shadow.camera.near = 40;
-    moonLight.shadow.camera.far = 650;
+    moonLight.shadow.camera.near = 1;
+    moonLight.shadow.camera.far = 2000;
     moonLight.shadow.camera.left = -260;
     moonLight.shadow.camera.right = 260;
     moonLight.shadow.camera.top = 260;
     moonLight.shadow.camera.bottom = -260;
     moonLight.shadow.bias = -0.0004;
-    moonLight.shadow.normalBias = 0.02;
+    moonLight.shadow.normalBias = 0.18;
     scene.add(moonLight);
+    scene.add(moonLight.target);
 }
 
 function createStarfield() {
@@ -898,7 +932,7 @@ function initializeScene() {
     createStarfield();
     createPowerGrid(poleManager);
     poleManager.build();
-    createTransmissionLines();
+    createTransmissionLines(citySimulator.grafo);
 
     buildInstancedTrees();
     buildInstancedBases();
@@ -928,6 +962,7 @@ const ID_MAP = {
     'Zona_Industrial_A':    'Zona_Industrial_A',
     'Data_Center':          'Data_Center',
     'Escolas':              'Escolas',
+    'Fazenda_Eolica':       'Fazenda_Eolica',
     'Fazenda_Solar':        'Fazenda_Solar'
 };
 
@@ -1280,49 +1315,7 @@ function animate() {
     const delta = Math.min(0.08, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    if (windTurbines && windTurbines.length) {
-        // Base speed based on AI values
-        const node = citySimulator?.grafo?.nodes.get('Parque_Eolico');
-        let windSpeed = 1.0;
-        if (node) {
-            // Se está gerando, gira mais rápido (ex: 2.0 a 3.5). Se não, mais devagar.
-            windSpeed = node.demanda_kw_atual < 0 ? 1.5 + (Math.abs(node.demanda_kw_atual) / 1000) * 2.0 : 0.5;
-        }
-        
-        // Boost from clicking
-        if (window._windBoostTime > 0) {
-            windSpeed += 5.0;
-            window._windBoostTime -= delta;
-        }
-
-        windTurbines.forEach(rotor => {
-            rotor.rotation.z += delta * windSpeed;
-        });
-    }
-
-    // Painéis solares (só emitem luz quando há produção de dia)
-    if (materials?.solar) {
-        materials.solar.emissiveIntensity = Math.max(0, 1.0 - globalNightFactor) * 0.8;
-    }
-
-    // Vapor contínuo da usina nuclear
-    window._nuclearSteamTimer = (window._nuclearSteamTimer || 0) + delta;
-    if (window._nuclearSteamTimer > 0.4) {
-        window._nuclearSteamTimer = 0;
-        const nuclearNode = citySimulator?.grafo?.nodes.get('Usina_Nuclear');
-        if (nuclearNode && nuclearNode.demanda_kw_atual < 0) {
-            const nuclearPos = backendNodePositions['Usina_Nuclear'];
-            if (nuclearPos && vfxManager) {
-                // A torre de resfriamento fica a x + 7*4=28, z + 5*4=20 no grupo? 
-                // Wait, o grupo power_plant tem scale(4,4,4). 
-                // A torre coolingTower fica em position(7, 0, 5) em relação ao grupo.
-                // Logo, no mundo ela fica em: nuclearPos.x + 28, nuclearPos.z + 20
-                vfxManager.emitNuclearSteam(new THREE.Vector3(nuclearPos.x + 28, 80.0, nuclearPos.z + 20), 1);
-            }
-        }
-    }
-
-
+    updateEnergySources(delta, globalNightFactor, citySimulator.grafo, citySimulator.estado, vfxManager);
 
     if (poleManager) poleManager.update(delta, now/1000, camera.position, globalNightFactor, trafficManager ? trafficManager.vehicles : [], trafficManager ? trafficManager.pedestrians : []);
     if (trafficManager) trafficManager.update(delta);
@@ -1377,7 +1370,8 @@ function animate() {
                 if (flyVelocity.y < 0) flyVelocity.y = 0;
             }
 
-            const bound = WORLD_SIZE / 2 + 50;
+            // Include the outlying generation campuses and their visiting viewpoints.
+            const bound = WORLD_SIZE * 1.25;
             camera.position.x = Math.max(-bound, Math.min(bound, camera.position.x));
             camera.position.z = Math.max(-bound, Math.min(bound, camera.position.z));
             camera.position.y = Math.min(420, camera.position.y);
@@ -1465,19 +1459,36 @@ function updateSmoothDayNightCycle(delta) {
     }
 
     // Trajetória orbital do Sol (Leste -> Oeste durante o dia: 6h às 18h)
+    // Keep the original shadow-map budget, centred on the city or campus being viewed.
+    camera.getWorldDirection(sourceShadowDirection);
+    sourceShadowGround.set(0,0,0);
+    if (sourceShadowDirection.y < -0.12) {
+        sourceShadowGround.copy(camera.position).addScaledVector(sourceShadowDirection, -camera.position.y/sourceShadowDirection.y);
+    }
+    let shadowSource = null;
+    for (const source of energySources.values()) {
+        if (sourceShadowGround.distanceToSquared(source.position) < 150*150) { shadowSource = source; break; }
+    }
+    if (shadowSource) sourceShadowGround.copy(shadowSource.position);
+    else sourceShadowGround.set(0,0,0);
+    sourceShadowFocus.lerp(sourceShadowGround, 1-Math.exp(-4*delta));
     const sunAngle = ((h - 6) / 12) * Math.PI;
     if (sunLight) {
-        sunLight.position.x = -240 * Math.cos(sunAngle);
-        sunLight.position.y = Math.max(-40, 260 * Math.sin(sunAngle));
-        sunLight.position.z = 130;
+        sunLight.position.x = -720 * Math.cos(sunAngle);
+        sunLight.position.y = 3 * Math.max(-40, 260 * Math.sin(sunAngle));
+        sunLight.position.z = 390;
+        sunLight.position.add(sourceShadowFocus);
+        sunLight.target.position.copy(sourceShadowFocus);
     }
 
     // Trajetória orbital da Lua (Noite: 18h às 6h)
     if (moonLight) {
         const moonAngle = sunAngle + Math.PI;
-        moonLight.position.x = -240 * Math.cos(moonAngle);
-        moonLight.position.y = Math.max(-40, 260 * Math.sin(moonAngle));
-        moonLight.position.z = -130;
+        moonLight.position.x = -720 * Math.cos(moonAngle);
+        moonLight.position.y = 3 * Math.max(-40, 260 * Math.sin(moonAngle));
+        moonLight.position.z = -390;
+        moonLight.position.add(sourceShadowFocus);
+        moonLight.target.position.copy(sourceShadowFocus);
     }
 
     // Fator de Luz Solar (0 = Noite, 1 = Meio-Dia)
@@ -1604,4 +1615,3 @@ window.addEventListener('resize', handleResize);
 animate();
 
 window.camera = camera;
-

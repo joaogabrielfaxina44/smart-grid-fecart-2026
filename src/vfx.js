@@ -366,11 +366,12 @@ export class VFXManager {
                 
                 if (p.life <= 0) {
                     this.scene.remove(p.mesh);
+                    p.mesh.material.dispose();
                     this.nuclearSteam.particles.splice(i, 1);
                 } else {
                     p.mesh.position.addScaledVector(p.velocity, delta);
-                    p.mesh.scale.addScalar(delta * 1.5);
-                    p.mesh.material.opacity = Math.max(0, p.life / p.maxLife) * 0.4;
+                    p.mesh.scale.addScalar(delta * 3.5);
+                    p.mesh.material.opacity = Math.min(1, (p.maxLife - p.life) * 2) * Math.max(0, p.life / p.maxLife) * 0.3;
                 }
             }
         }
@@ -391,6 +392,68 @@ export class VFXManager {
             }
         }
 
+        // ── Atualização de Explosões Nucleares (Nukes) ──
+        if (this.nukes) {
+            for (let i = this.nukes.length - 1; i >= 0; i--) {
+                const n = this.nukes[i];
+                n.life += delta;
+                const t = n.life / n.maxLife;
+
+                if (t >= 1.0) {
+                    this.scene.remove(n.elements.light);
+                    this.scene.remove(n.elements.fireball);
+                    this.scene.remove(n.elements.shockwave);
+                    this.scene.remove(n.elements.stem);
+                    this.scene.remove(n.elements.halo);
+                    this.nukes.splice(i, 1);
+                    continue;
+                }
+
+                // 1. Luz: Pico extremo imediato, cai exponencialmente
+                const flashCurve = Math.max(0, 1.0 - (n.life * 0.8));
+                n.elements.light.intensity = flashCurve * 80000;
+                n.elements.light.color.setHSL(0.08, 1.0, 0.5 + flashCurve * 0.5);
+
+                // 2. Fireball: Expande rápido e depois sobe, escurecendo (branco -> amarelo -> vermelho -> cinza escuro)
+                // Aceleração inicial enorme, depois estabiliza e sobe
+                const expansion = Math.pow(Math.min(1.0, n.life / 2.0), 0.5); 
+                const fbScale = 20 + expansion * 220; 
+                n.elements.fireball.scale.set(fbScale, fbScale, fbScale);
+                n.elements.fireball.position.y = n.position.y + Math.pow(n.life, 1.8) * 20; // Sobe acelerando levemente
+                
+                // HSL: Matiz vai de amarelo/laranja (0.1) até vermelho (0.0). Lightness vai de 1.0 até 0.1
+                const fbColorT = Math.min(1.0, n.life / 5.0); 
+                n.elements.fireball.material.color.setHSL(
+                    0.08 * (1 - fbColorT), // Hue
+                    1.0,                   // Saturation
+                    1.0 - fbColorT * 0.9   // Lightness (escurece p/ cinza/preto)
+                );
+                n.elements.fireball.material.opacity = Math.max(0, 1.0 - t * 1.5);
+
+                // 3. Shockwave: Expansão ultra rápida no chão
+                const swScale = Math.pow(n.life, 0.8) * 800;
+                n.elements.shockwave.scale.set(swScale, swScale, 1);
+                n.elements.shockwave.material.opacity = Math.max(0, 1.0 - (n.life / 3.0));
+
+                // 4. Halo (Onda de choque secundária superior)
+                const haloScale = Math.pow(n.life, 0.9) * 450;
+                n.elements.halo.scale.set(haloScale, haloScale, 1);
+                n.elements.halo.position.y = n.position.y + 40 + (n.life * 15);
+                n.elements.halo.material.opacity = Math.max(0, 0.7 - (n.life / 3.0));
+
+                // 5. Caule do Cogumelo: Conecta o chão à Fireball
+                const stemHeight = Math.max(0.1, n.elements.fireball.position.y - n.position.y);
+                n.elements.stem.scale.set(fbScale * 0.25, stemHeight, fbScale * 0.25);
+                n.elements.stem.material.color.setHSL(0.05, 1.0, 1.0 - fbColorT * 0.8);
+                n.elements.stem.material.opacity = Math.max(0, 0.8 - t * 1.2);
+                
+                // Shake contínuo tremendo a câmera violentamente
+                if (n.life < 10.0) {
+                    this.shakeIntensity = Math.max(this.shakeIntensity, (1.0 - (n.life / 10.0)) * 60.0);
+                }
+            }
+        }
+
         // ── Camera Shake ───────────────────────────────────────
         this._shakeOffset = this._shakeOffset || new THREE.Vector3();
         const shakeOffset = this._shakeOffset;
@@ -401,26 +464,114 @@ export class VFXManager {
             shakeOffset.y = (Math.random() - 0.5) * this.shakeIntensity;
             shakeOffset.z = (Math.random() - 0.5) * this.shakeIntensity;
 
-            this.shakeIntensity -= delta * 4.0;
+            this.shakeIntensity -= delta * 8.0; // Amortecimento
             if (this.shakeIntensity < 0) this.shakeIntensity = 0;
         }
 
         return shakeOffset;
     }
 
+    triggerNuclearExplosion(position) {
+        const nuke = {
+            life: 0,
+            maxLife: 18.0, // Duração bem longa
+            position: position.clone(),
+            elements: {}
+        };
+
+        // 1. Luz Ofuscante
+        const light = new THREE.PointLight(0xffffff, 50000, 4000);
+        light.position.copy(position);
+        light.position.y += 50;
+        this.scene.add(light);
+        nuke.elements.light = light;
+
+        // 2. Fireball
+        const fbGeo = new THREE.SphereGeometry(1, 32, 32);
+        const fbMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending });
+        const fireball = new THREE.Mesh(fbGeo, fbMat);
+        fireball.position.copy(position);
+        this.scene.add(fireball);
+        nuke.elements.fireball = fireball;
+
+        // 3. Shockwave no chão
+        const swGeo = new THREE.RingGeometry(0.1, 1, 64);
+        const swMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 1.0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+        const shockwave = new THREE.Mesh(swGeo, swMat);
+        shockwave.rotation.x = -Math.PI / 2;
+        shockwave.position.copy(position);
+        shockwave.position.y += 2;
+        this.scene.add(shockwave);
+        nuke.elements.shockwave = shockwave;
+
+        // 4. Halo Aéreo (anel de condensação)
+        const haloGeo = new THREE.RingGeometry(0.8, 1, 64);
+        const haloMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+        const halo = new THREE.Mesh(haloGeo, haloMat);
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.copy(position);
+        halo.position.y += 120; // Forma-se no alto
+        this.scene.add(halo);
+        nuke.elements.halo = halo;
+
+        // 5. Caule do Cogumelo
+        const stemGeo = new THREE.CylinderGeometry(1, 1, 1, 32);
+        stemGeo.translate(0, 0.5, 0); // Pivô na base
+        const stemMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending });
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+        stem.position.copy(position);
+        this.scene.add(stem);
+        nuke.elements.stem = stem;
+
+        this.nukes = this.nukes || [];
+        this.nukes.push(nuke);
+
+        // Flash de Tela Branco Massivo
+        const flashDiv = document.getElementById('screen-flash');
+        if (flashDiv) {
+            flashDiv.style.transition = 'none';
+            flashDiv.style.background = 'white';
+            flashDiv.style.opacity = '1';
+            
+            // Fica ofuscante por 400ms, depois decai lentamente por 3 segundos
+            setTimeout(() => {
+                flashDiv.style.transition = 'opacity 3s ease-out';
+                flashDiv.style.opacity = '0';
+                setTimeout(() => {
+                    flashDiv.style.transition = 'opacity 0.2s'; // Volta ao padrão das falhas elétricas
+                }, 3000);
+            }, 400);
+        }
+
+        // Tremor maciço
+        this.shakeIntensity = 100.0;
+    }
+
     emitNuclearSteam(position, amount = 1) {
         if (!this.nuclearSteam) this.nuclearSteam = { particles: [] };
         
-        const geo = new THREE.SphereGeometry(1.5, 6, 6);
-        const mat = new THREE.MeshBasicMaterial({
-            color: 0xcccccc,
+        if (!this._steamTexture) {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const fade = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            fade.addColorStop(0, 'rgba(255,255,255,0.9)');
+            fade.addColorStop(0.45, 'rgba(255,255,255,0.5)');
+            fade.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = fade; ctx.fillRect(0, 0, 64, 64);
+            this._steamTexture = new THREE.CanvasTexture(canvas);
+        }
+        const mat = new THREE.SpriteMaterial({
+            map: this._steamTexture,
+            color: 0xe4e8e7,
             transparent: true,
             opacity: 0.4,
             depthWrite: false
         });
 
-        for(let i=0; i<amount; i++) {
-            const mesh = new THREE.Mesh(geo, mat.clone());
+        for(let i=0; i<amount && this.nuclearSteam.particles.length < 48; i++) {
+            const mesh = new THREE.Sprite(mat.clone());
+            mesh.scale.setScalar(9 + Math.random() * 3);
             mesh.position.copy(position);
             mesh.position.x += (Math.random() - 0.5) * 2;
             mesh.position.z += (Math.random() - 0.5) * 2;
@@ -433,6 +584,7 @@ export class VFXManager {
                 maxLife: 6.0
             });
         }
+        mat.dispose();
     }
 
     createPulseEffect(position, color, isFlat = false, speed = 25.0) {

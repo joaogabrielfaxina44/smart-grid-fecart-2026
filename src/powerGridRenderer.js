@@ -120,27 +120,9 @@ function createMergedLineSegments(group, vertices) {
     group.add(lineSegments);
 }
 
-export function createTransmissionLines() {
-    const transmissionEdges = [
-        { u: 'Subestacao_Central', v: 'Subestacao_Norte' },
-        { u: 'Subestacao_Central', v: 'Subestacao_Sul' },
-        { u: 'Subestacao_Central', v: 'Hospital_Prontomed' },
-        { u: 'Subestacao_Norte', v: 'Bairro_Residencial_A' },
-        { u: 'Subestacao_Norte', v: 'Centro_Comercial' },
-        { u: 'Subestacao_Norte', v: 'Data_Center' },
-        { u: 'Subestacao_Sul', v: 'Bairro_Residencial_B' },
-        { u: 'Subestacao_Sul', v: 'Shopping_Metropolitano' },
-        { u: 'Subestacao_Sul', v: 'Zona_Industrial_A' },
-        { u: 'Subestacao_Sul', v: 'Escolas' },
-        { u: 'Fazenda_Solar', v: 'Subestacao_Norte' },
-        { u: 'Fazenda_Solar', v: 'Subestacao_Sul' },
-        { u: 'Hospital_Prontomed', v: 'Data_Center' },
-        { u: 'Centro_Comercial', v: 'Shopping_Metropolitano' },
-        { u: 'Bairro_Residencial_A', v: 'Bairro_Residencial_B' },
-        { u: 'Zona_Industrial_A', v: 'Shopping_Metropolitano' },
-        { u: 'Fazenda_Eolica', v: 'Subestacao_Sul' },
-        { u: 'Fazenda_Eolica', v: 'Subestacao_Norte' }
-    ];
+export function createTransmissionLines(grafo) {
+    // Render the actual graph, including future generators, without phantom edges.
+    const transmissionEdges = [...new Set(grafo.edges.values())].map(edge => ({ u: edge.origem, v: edge.destino }));
 
     const group = new THREE.Group();
     group.name = 'transmission_lines';
@@ -170,7 +152,8 @@ export function createTransmissionLines() {
                 p2
             ];
 
-            const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.05);
+            // Centripetal interpolation avoids loops at short terminal approaches.
+            const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
             const geometry = new THREE.TubeGeometry(curve, 64, 0.4, 6, false);
             const line = new THREE.Mesh(geometry, powerMats.wireGlowing);
             line.userData = { 

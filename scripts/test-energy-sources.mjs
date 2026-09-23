@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {CitySimulator} from '../src/smartAgents.js';
+const sim=new CitySimulator();
+const g=sim.grafo;
+const solar=g.nodes.get('Fazenda_Solar'),wind=g.nodes.get('Fazenda_Eolica');
+sim.estado.hora=12;sim.tick(0);
+assert.equal(solar.demanda_kw_atual,-500);
+assert.equal(wind.demanda_kw_atual,-60);
+sim.estado.hora=20;sim.tick(0);
+assert.equal(Math.abs(solar.demanda_kw_atual),0,'Solar cannot produce from wind at night');
+assert.equal(wind.demanda_kw_atual,-60);
+sim.alterarClima('tempestade');
+assert.equal(Math.abs(wind.demanda_kw_atual),0);
+sim.estado.hora=12;sim.alterarClima('ensolarado');
+g.desativarAresta('Fazenda_Eolica','Subestacao_Norte');
+const alternative=g.dijkstraRotaAlternativa('Fazenda_Eolica');
+assert.ok(alternative);
+for(let i=0;i<alternative.length-1;i++) assert.ok(g.getEdge(alternative[i],alternative[i+1]).status_ativa);
+g.desativarAresta('Fazenda_Eolica','Subestacao_Sul');
+assert.equal(g.dijkstraRotaAlternativa('Fazenda_Eolica'),null);
+sim.tick(0);
+assert.equal(Math.abs(wind.demanda_kw_atual),0);
+assert.equal(wind.status_energizado,false);
+sim.resetar();
+assert.equal(wind.status_energizado,true);
+assert.equal(wind.demanda_kw_atual,-60);
+assert.ok(g.dijkstraRotaAlternativa('Hospital_Prontomed'));
+for(const e of new Set(g.edges.values())) {
+ assert.ok(g.nodes.has(e.origem) && g.nodes.has(e.destino));
+ assert.ok(g.adjacency.get(e.origem).includes(e.destino));
+}
+console.log('PASS: daytime, nighttime, storm, wind isolation, Dijkstra detour, reset and graph endpoint integrity.');

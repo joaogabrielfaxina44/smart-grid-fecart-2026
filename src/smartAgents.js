@@ -357,6 +357,9 @@ export class CityGraph {
         this._addNode('Escolas',                { nome: 'Distrito Educacional',        tipo: 'Público',          demanda_base_kw: 300,  prioridade: 2 });
         this._addNode('Fazenda_Solar',          { nome: 'Fazenda Solar Urbana',        tipo: 'Geração',          demanda_base_kw: -500, prioridade: 0 });
 
+        // Parque agregado: 150 kW didáticos, independente da escala dos modelos.
+        this._addNode('Fazenda_Eolica', { nome: 'Fazenda Eólica', tipo: 'Geração', demanda_base_kw: -150, prioridade: 0 });
+
         // Linhas de transmissão (capacidades ajustadas para 4500 kW)
         this._addEdge('Subestacao_Central', 'Subestacao_Norte',   2200, 4.0);
         this._addEdge('Subestacao_Central', 'Subestacao_Sul',     2300, 4.5);
@@ -370,6 +373,8 @@ export class CityGraph {
         this._addEdge('Subestacao_Sul',     'Escolas',            600, 1.6);
         this._addEdge('Fazenda_Solar',      'Subestacao_Norte',   1000, 3.0);
         this._addEdge('Fazenda_Solar',      'Subestacao_Sul',     1000, 4.0);
+        this._addEdge('Fazenda_Eolica', 'Subestacao_Norte', 1000, 4.0);
+        this._addEdge('Fazenda_Eolica', 'Subestacao_Sul', 1000, 3.0);
         this._addEdge('Hospital_Prontomed', 'Data_Center',        800, 2.6);
         this._addEdge('Centro_Comercial',   'Shopping_Metropolitano', 800, 3.3);
         this._addEdge('Bairro_Residencial_A','Bairro_Residencial_B', 800, 5.0);
@@ -471,8 +476,15 @@ export class DistributedGenAgent extends BaseAgent {
         const solar = grafo.nodes.get('Fazenda_Solar');
         if (solar) {
             const base = Math.abs(solar.demanda_base_kw);
-            solar.demanda_kw_atual = -(base * Math.max(fatorSolar, fatorEolica * 0.3));
+            const conectado = (grafo.adjacency.get(solar.id) ?? []).some(id => grafo.getEdge(solar.id, id)?.status_ativa);
+            solar.demanda_kw_atual = conectado ? -(base * fatorSolar) : 0;
             logs.push(`[${this.nome}] Fazenda Solar gerando ${Math.abs(solar.demanda_kw_atual).toFixed(1)} kW`);
+        }
+
+        const eolica = grafo.nodes.get('Fazenda_Eolica');
+        if (eolica) {
+            const conectado = (grafo.adjacency.get(eolica.id) ?? []).some(id => grafo.getEdge(eolica.id, id)?.status_ativa);
+            eolica.demanda_kw_atual = conectado ? -Math.abs(eolica.demanda_base_kw) * fatorEolica : 0;
         }
 
         return logs;
