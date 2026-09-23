@@ -361,11 +361,26 @@ function setupRaycaster() {
         powerGridObjects.forEach(g => {
             g.children.forEach(c => interactables.push(c));
         });
+        cityGroup.children.forEach(g => {
+            if (g.name.startsWith('solar_farm') || g.name.startsWith('wind_farm') || g.name.startsWith('power_plant')) {
+                interactables.push(g);
+            }
+        });
 
-        const intersects = raycaster.intersectObjects(interactables, false);
+        const intersects = raycaster.intersectObjects(interactables, true);
         if (intersects.length > 0) {
             const hit = intersects[0];
             let target = hit.object;
+
+            // ── Clique em Fonte de Energia ───────────────
+            let current = target;
+            while (current && current !== scene) {
+                if (current.name.startsWith('solar_farm') || current.name.startsWith('wind_farm') || current.name.startsWith('power_plant')) {
+                    triggerEnergySourceInfo(current, hit.point.clone());
+                    return;
+                }
+                current = current.parent;
+            }
 
             // ── Clique em Linha de Transmissão ───────────────
             if (target.userData?.backendEdgeId && target.userData.u && target.userData.v) {
@@ -379,22 +394,96 @@ function setupRaycaster() {
                     return;
                 }
 
-                // Ponto de clique no espaço 3D
                 const clickPoint = hit.point.clone();
                 triggerLineBreak(u, v, clickPoint);
                 return;
             }
 
             // ── Clique em Fio de Distribuição (postes locais) ─
-            while (target.parent && !target.parent.userData.isGridNode) {
+            while (target.parent && !target.parent.userData?.isGridNode) {
                 target = target.parent;
+                if (!target) break;
             }
-            if (target.parent && target.parent.userData.isGridNode) {
+            if (target && target.parent && target.parent.userData?.isGridNode) {
                 const clickPoint = hit.point.clone();
                 triggerLocalBlackout(target.parent, clickPoint);
             }
         }
     });
+}
+
+function triggerEnergySourceInfo(group, point) {
+    const isSolar = group.name.startsWith('solar');
+    const isWind = group.name.startsWith('wind');
+    const isNuclear = group.name.startsWith('power_plant');
+
+    let title = '';
+    let nodeNameStr = '';
+    let color = '';
+
+    if (isSolar) {
+        title = 'Fazenda Solar';
+        nodeNameStr = 'Fazenda_Solar';
+        color = 0x38bdf8;
+        vfxManager.createPulseEffect(point, color, true, 18.0);
+    } else if (isWind) {
+        title = 'Parque Eólico';
+        nodeNameStr = 'Parque_Eolico';
+        color = 0xffffff;
+        vfxManager.createPulseEffect(point, color, false, 25.0);
+        // Spin blades faster temporarily
+        window._windBoostTime = 2.0; 
+    } else if (isNuclear) {
+        title = 'Usina Nuclear';
+        nodeNameStr = 'Usina_Nuclear';
+        color = 0x4ade80;
+        vfxManager.createPulseEffect(point, color, false, 20.0);
+        vfxManager.emitNuclearSteam(new THREE.Vector3(point.x, point.y + 20, point.z), 5);
+    }
+
+    const node = citySimulator?.grafo?.nodes.get(nodeNameStr);
+    const kw = node ? Math.abs(node.demanda_kw_atual || 0).toFixed(1) : '0.0';
+    const status = node ? (node.demanda_kw_atual < 0 ? 'Gerando' : 'Inativo') : 'Desconhecido';
+
+    const div = document.createElement('div');
+    div.className = 'energy-source-popup';
+    div.innerHTML = `
+        <h4 style="color: #${color.toString(16).padStart(6, '0')}; margin: 0 0 8px 0; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 4px;">${title}</h4>
+        <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Status:</strong> ${status}</div>
+        <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Produção:</strong> ${kw} kW</div>
+    `;
+    div.style.position = 'absolute';
+    div.style.background = 'rgba(15, 20, 30, 0.85)';
+    div.style.backdropFilter = 'blur(8px)';
+    div.style.border = `1px solid #${color.toString(16).padStart(6, '0')}`;
+    div.style.padding = '12px 16px';
+    div.style.borderRadius = '8px';
+    div.style.color = '#fff';
+    div.style.pointerEvents = 'none';
+    div.style.zIndex = '9999';
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(10px)';
+    div.style.transition = 'all 0.3s ease-out';
+    div.style.boxShadow = `0 4px 15px rgba(0,0,0,0.5), 0 0 10px #${color.toString(16).padStart(6, '0')}44`;
+    
+    // Position near mouse
+    div.style.left = Math.min(window.innerWidth - 200, window.event.clientX + 15) + 'px';
+    div.style.top = Math.max(20, window.event.clientY - 40) + 'px';
+    
+    document.body.appendChild(div);
+    
+    // Animate in
+    requestAnimationFrame(() => {
+        div.style.opacity = '1';
+        div.style.transform = 'translateY(0)';
+    });
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        div.style.opacity = '0';
+        div.style.transform = 'translateY(-10px)';
+        setTimeout(() => div.remove(), 300);
+    }, 3000);
 }
 
 // ── Corte de Linha de Transmissão (com resposta da IA) ───────
@@ -1190,9 +1279,45 @@ function animate() {
     lastFrameTime = now;
 
     if (windTurbines && windTurbines.length) {
+        // Base speed based on AI values
+        const node = citySimulator?.grafo?.nodes.get('Parque_Eolico');
+        let windSpeed = 1.0;
+        if (node) {
+            // Se está gerando, gira mais rápido (ex: 2.0 a 3.5). Se não, mais devagar.
+            windSpeed = node.demanda_kw_atual < 0 ? 1.5 + (Math.abs(node.demanda_kw_atual) / 1000) * 2.0 : 0.5;
+        }
+        
+        // Boost from clicking
+        if (window._windBoostTime > 0) {
+            windSpeed += 5.0;
+            window._windBoostTime -= delta;
+        }
+
         windTurbines.forEach(rotor => {
-            rotor.rotation.z += delta * 1.5;
+            rotor.rotation.z += delta * windSpeed;
         });
+    }
+
+    // Painéis solares (só emitem luz quando há produção de dia)
+    if (materials?.solar) {
+        materials.solar.emissiveIntensity = Math.max(0, 1.0 - globalNightFactor) * 0.8;
+    }
+
+    // Vapor contínuo da usina nuclear
+    window._nuclearSteamTimer = (window._nuclearSteamTimer || 0) + delta;
+    if (window._nuclearSteamTimer > 0.4) {
+        window._nuclearSteamTimer = 0;
+        const nuclearNode = citySimulator?.grafo?.nodes.get('Usina_Nuclear');
+        if (nuclearNode && nuclearNode.demanda_kw_atual < 0) {
+            const nuclearPos = backendNodePositions['Usina_Nuclear'];
+            if (nuclearPos && vfxManager) {
+                // A torre de resfriamento fica a x + 7*4=28, z + 5*4=20 no grupo? 
+                // Wait, o grupo power_plant tem scale(4,4,4). 
+                // A torre coolingTower fica em position(7, 0, 5) em relação ao grupo.
+                // Logo, no mundo ela fica em: nuclearPos.x + 28, nuclearPos.z + 20
+                vfxManager.emitNuclearSteam(new THREE.Vector3(nuclearPos.x + 28, 80.0, nuclearPos.z + 20), 1);
+            }
+        }
     }
 
 

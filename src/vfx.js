@@ -358,6 +358,39 @@ export class VFXManager {
             hp.trail.material.opacity = 0.5;
         }
 
+        // ── Atualização do Vapor Nuclear ──
+        if (this.nuclearSteam) {
+            for (let i = this.nuclearSteam.particles.length - 1; i >= 0; i--) {
+                const p = this.nuclearSteam.particles[i];
+                p.life -= delta;
+                
+                if (p.life <= 0) {
+                    this.scene.remove(p.mesh);
+                    this.nuclearSteam.particles.splice(i, 1);
+                } else {
+                    p.mesh.position.addScaledVector(p.velocity, delta);
+                    p.mesh.scale.addScalar(delta * 1.5);
+                    p.mesh.material.opacity = Math.max(0, p.life / p.maxLife) * 0.4;
+                }
+            }
+        }
+
+        // ── Pulso de Destaque ──
+        if (this.highlightPulses) {
+            for (let i = this.highlightPulses.length - 1; i >= 0; i--) {
+                const pulse = this.highlightPulses[i];
+                pulse.life -= delta;
+                if (pulse.life <= 0) {
+                    this.scene.remove(pulse.mesh);
+                    this.highlightPulses.splice(i, 1);
+                } else {
+                    pulse.scale += delta * pulse.speed;
+                    pulse.mesh.scale.set(pulse.scale, pulse.scale, pulse.scale);
+                    pulse.mesh.material.opacity = Math.max(0, pulse.life / pulse.maxLife) * pulse.baseOpacity;
+                }
+            }
+        }
+
         // ── Camera Shake ───────────────────────────────────────
         this._shakeOffset = this._shakeOffset || new THREE.Vector3();
         const shakeOffset = this._shakeOffset;
@@ -373,5 +406,69 @@ export class VFXManager {
         }
 
         return shakeOffset;
+    }
+
+    emitNuclearSteam(position, amount = 1) {
+        if (!this.nuclearSteam) this.nuclearSteam = { particles: [] };
+        
+        const geo = new THREE.SphereGeometry(1.5, 6, 6);
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0xcccccc,
+            transparent: true,
+            opacity: 0.4,
+            depthWrite: false
+        });
+
+        for(let i=0; i<amount; i++) {
+            const mesh = new THREE.Mesh(geo, mat.clone());
+            mesh.position.copy(position);
+            mesh.position.x += (Math.random() - 0.5) * 2;
+            mesh.position.z += (Math.random() - 0.5) * 2;
+            this.scene.add(mesh);
+            
+            this.nuclearSteam.particles.push({
+                mesh,
+                velocity: new THREE.Vector3((Math.random()-0.5)*1, 6 + Math.random()*2, (Math.random()-0.5)*1),
+                life: 4.0 + Math.random() * 2.0,
+                maxLife: 6.0
+            });
+        }
+    }
+
+    createPulseEffect(position, color, isFlat = false, speed = 25.0) {
+        if (!this.highlightPulses) this.highlightPulses = [];
+        
+        let geo;
+        if (isFlat) {
+            geo = new THREE.RingGeometry(0.1, 1, 32);
+        } else {
+            geo = new THREE.SphereGeometry(1, 16, 16);
+        }
+        
+        const mat = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(position);
+        if (isFlat) {
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.position.y += 1.5;
+        }
+        this.scene.add(mesh);
+        
+        this.highlightPulses.push({
+            mesh,
+            scale: 0.1,
+            speed: speed,
+            life: 1.0,
+            maxLife: 1.0,
+            baseOpacity: 0.8
+        });
     }
 }

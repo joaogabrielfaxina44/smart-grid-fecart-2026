@@ -711,36 +711,54 @@ function createPowerPlant(block) {
     group.scale.set(4.0, 4.0, 4.0);
     cityGroup.add(group);
     
+    // Main Reactor Building
     addBox({ width: 14, height: 8, depth: 10, x: 0, y: 4, z: -2, material: materials.darkConcrete, parent: group, cast: true, receive: true });
     addBox({ width: 14.5, height: 0.5, depth: 10.5, x: 0, y: 8.25, z: -2, material: materials.industryRoof, parent: group, cast: true, receive: true });
+    
+    // Glowing reactor cores inside main building
+    addBox({ width: 2, height: 4, depth: 2, x: -3, y: 4, z: 4, material: materials.nuclearCore, parent: group, cast: false, receive: false });
+    addBox({ width: 2.2, height: 4.2, depth: 2.2, x: -3, y: 4, z: 4, material: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.2 }), parent: group, cast: false, receive: false });
+    addBox({ width: 2, height: 4, depth: 2, x: 3, y: 4, z: 4, material: materials.nuclearCore, parent: group, cast: false, receive: false });
+    addBox({ width: 2.2, height: 4.2, depth: 2.2, x: 3, y: 4, z: 4, material: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.2 }), parent: group, cast: false, receive: false });
 
-    const stackGeo = new THREE.CylinderGeometry(0.8, 1.2, 20, 12);
+    // Stacks
+    const stackGeo = new THREE.CylinderGeometry(1.0, 1.4, 22, 16);
     for (let i=0; i<3; i++) {
         const stack = new THREE.Mesh(stackGeo, materials.darkConcrete);
-        stack.position.set(-4 + i*4, 10, 5);
+        stack.position.set(-5 + i*5, 11, -5);
         stack.castShadow = true;
         stack.matrixAutoUpdate = false;
         stack.updateMatrix();
         group.add(stack);
         
-        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: -4 + i*4, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
+        addBox({ width: 0.4, height: 0.4, depth: 0.4, x: -5 + i*5, y: 22.2, z: -5, material: materials.redLight, parent: group, cast: false, receive: false });
     }
 
+    // Cooling Tower
     const points = [];
     for ( let i = 0; i <= 10; i ++ ) {
         const y = i * 2.0;
-        const x = 3.5 - Math.sin( i * 0.15 ) * 1.5;
+        const x = 4.0 - Math.sin( i * 0.15 ) * 2.0;
         points.push( new THREE.Vector2( x, y ) );
     }
-    const coolingTowerGeo = new THREE.LatheGeometry(points, 16);
+    const coolingTowerGeo = new THREE.LatheGeometry(points, 24);
     const coolingTower = new THREE.Mesh(coolingTowerGeo, materials.darkConcrete);
-    coolingTower.position.set(6, 0, 5);
+    coolingTower.position.set(7, 0, 5);
     coolingTower.castShadow = true;
     coolingTower.matrixAutoUpdate = false;
     coolingTower.updateMatrix();
     group.add(coolingTower);
     
-    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: 6, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
+    // Glowing ring on cooling tower
+    const ringGeo = new THREE.TorusGeometry(3.9, 0.2, 8, 32);
+    const ring = new THREE.Mesh(ringGeo, materials.nuclearCore);
+    ring.position.set(7, 10, 5);
+    ring.rotation.x = Math.PI / 2;
+    ring.matrixAutoUpdate = false;
+    ring.updateMatrix();
+    group.add(ring);
+    
+    addBox({ width: 0.6, height: 0.6, depth: 0.6, x: 7, y: 20.2, z: 5, material: materials.redLight, parent: group, cast: false, receive: false });
 }
 
 function createSolarFarm(block) {
@@ -761,7 +779,12 @@ function createSolarFarm(block) {
     imesh.receiveShadow = true;
     imesh.matrixAutoUpdate = false;
     
+    // Status lights on the edges of the panels to show "active" state
+    const ledMesh = new THREE.InstancedMesh(unitBoxGeometry, new THREE.MeshBasicMaterial({ color: 0x38bdf8 }), panelCount);
+    ledMesh.matrixAutoUpdate = false;
+    
     const dummy = new THREE.Object3D();
+    const ledDummy = new THREE.Object3D();
     let i = 0;
     
     const offsetX = (cols * spacingX) / 2;
@@ -769,25 +792,46 @@ function createSolarFarm(block) {
     
     for (let r=0; r<rows; r++) {
         for (let c=0; c<cols; c++) {
-            dummy.position.set(-offsetX + c * spacingX, 0.8, -offsetZ + r * spacingZ);
-            dummy.scale.set(2.4, 0.1, 1.6);
-            dummy.rotation.set(0.5, 0, 0); 
+            dummy.position.set(-offsetX + c * spacingX, 1.2, -offsetZ + r * spacingZ);
+            dummy.scale.set(2.4, 0.1, 1.8);
+            dummy.rotation.set(-Math.PI / 6, 0, 0); // Inclinado para cima (~30 graus)
             dummy.updateMatrix();
-            imesh.setMatrixAt(i++, dummy.matrix);
+            imesh.setMatrixAt(i, dummy.matrix);
+            
+            ledDummy.position.copy(dummy.position);
+            ledDummy.position.x += 1.1; // na beirada
+            ledDummy.position.y += 0.2;
+            ledDummy.position.z -= 0.8;
+            ledDummy.scale.set(0.1, 0.1, 0.1);
+            ledDummy.updateMatrix();
+            ledMesh.setMatrixAt(i, ledDummy.matrix);
+            
+            i++;
         }
     }
     imesh.instanceMatrix.needsUpdate = true;
     imesh.updateMatrix();
     group.add(imesh);
+    
+    ledMesh.instanceMatrix.needsUpdate = true;
+    ledMesh.updateMatrix();
+    group.add(ledMesh);
 
-    const supportMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.concrete, panelCount);
+    const supportMesh = new THREE.InstancedMesh(unitBoxGeometry, materials.concrete, panelCount * 2);
     supportMesh.matrixAutoUpdate = false;
     i = 0;
     for (let r=0; r<rows; r++) {
         for (let c=0; c<cols; c++) {
-            dummy.position.set(-offsetX + c * spacingX, 0.4, -offsetZ + r * spacingZ);
-            dummy.scale.set(0.15, 0.8, 0.15);
+            // Front leg
+            dummy.position.set(-offsetX + c * spacingX, 0.4, -offsetZ + r * spacingZ + 0.6);
+            dummy.scale.set(0.1, 0.8, 0.1);
             dummy.rotation.set(0, 0, 0);
+            dummy.updateMatrix();
+            supportMesh.setMatrixAt(i++, dummy.matrix);
+            
+            // Back leg
+            dummy.position.set(-offsetX + c * spacingX, 0.7, -offsetZ + r * spacingZ - 0.5);
+            dummy.scale.set(0.1, 1.4, 0.1);
             dummy.updateMatrix();
             supportMesh.setMatrixAt(i++, dummy.matrix);
         }
