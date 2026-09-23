@@ -106,8 +106,8 @@ export function initSharedFacadeMaterials(maxAnisotropy = 1) {
                 const isShop = type === 'shop';
                 const isIndustrial = type === 'industrial';
 
-                const cols = isGlass ? 2 : (isShop ? 2 : (isIndustrial ? 2 : 2));
-                const rows = isGlass ? 3 : (isShop ? 2 : (isIndustrial ? 2 : 3));
+                const cols = isGlass ? 4 : (isShop ? 3 : (isIndustrial ? 3 : 4));
+                const rows = isGlass ? 6 : (isShop ? 4 : (isIndustrial ? 3 : 6));
                 const ww = Math.round(cw / cols * 0.62);
                 const wh = Math.round(ch / rows * 0.58);
                 const spX = Math.round(cw / cols);
@@ -217,14 +217,49 @@ export function addBox({ width, height, depth, x, y = height / 2, z, material, p
     return mesh;
 }
 
+function createTiledBoxGeometry(w, h, d, type) {
+    const uv = geo.attributes.uv;
+    const norm = geo.attributes.normal;
+    
+    // Proporção física de uma janela real: 3m de largura por 4m de altura
+    // A textura base tem 4 colunas e 6 linhas
+    const tileW = 4 * 3.0; // 12.0
+    const tileH = 6 * 4.0; // 24.0
+    
+    const tileable = (type !== 'residential' && type !== 'shop');
+
+    if (tileable) {
+        for (let i = 0; i < uv.count; i++) {
+            const nx = Math.abs(norm.getX(i));
+            const ny = Math.abs(norm.getY(i));
+            const nz = Math.abs(norm.getZ(i));
+            
+            let u = uv.getX(i);
+            let v = uv.getY(i);
+            
+            if (nx > 0.5) { // Faces Laterais (profundidade x altura)
+                uv.setXY(i, u * (d / tileW), v * (h / tileH));
+            } else if (ny > 0.5) { // Topo/Base
+                uv.setXY(i, u * (w / tileW), v * (d / tileH));
+            } else if (nz > 0.5) { // Frente/Trás (largura x altura)
+                uv.setXY(i, u * (w / tileW), v * (h / tileH));
+            }
+        }
+    }
+    
+    return geo;
+}
+
 export function addBuildingWithFacade({ width, height, depth, x, z, seed, type, parent, roofMaterial = null, blockIndex = 0 }) {
     const wallMat = getBlockFacadeMaterial(type, seed, blockIndex);
     const topMat = roofMaterial || materials.roofConcrete;
     const botMat = materials.sidewalk;
 
-    const mesh = new THREE.Mesh(unitBoxGeometry, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
+    const geo = createTiledBoxGeometry(width, height, depth, type);
+    const mesh = new THREE.Mesh(geo, [wallMat, wallMat, topMat, botMat, wallMat, wallMat]);
+    
     mesh.position.set(x, height / 2, z);
-    mesh.scale.set(width, height, depth);
+    // mesh.scale não é necessário porque a geometria já tem o tamanho correto
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
