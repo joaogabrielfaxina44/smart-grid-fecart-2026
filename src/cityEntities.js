@@ -68,7 +68,7 @@ export class TrafficManager {
     getRandomRoadPos(isSidewalk = false) {
         const isHorizontal = Math.random() > 0.5;
         const line = this.roadCoords[Math.floor(Math.random() * this.roadCoords.length)];
-        const along = (Math.random() - 0.5) * 300;
+        const along = (Math.random() - 0.5) * 440; // Limite interno da cidade
         
         const offset = isSidewalk ? (this.roadWidth/2 + 1.2) : (this.roadWidth/4);
         const sideDir = Math.random() > 0.5 ? 1 : -1;
@@ -84,6 +84,34 @@ export class TrafficManager {
             dir.set(0, 0, -sideDir); 
         }
         return { pos, dir, isHorizontal, sideDir };
+    }
+
+    repositionVehicle(v) {
+        let pos, dir;
+        let valid = false;
+        let attempts = 0;
+        
+        while (!valid && attempts < 15) {
+            const data = this.getRandomRoadPos(false);
+            pos = data.pos;
+            dir = data.dir;
+            valid = true;
+            
+            for (let i = 0; i < this.vehicles.length; i++) {
+                const other = this.vehicles[i];
+                if (other === v) continue;
+                if (other.mesh.position.distanceToSquared(pos) < 100) { 
+                    valid = false;
+                    break;
+                }
+            }
+            attempts++;
+        }
+        
+        v.mesh.position.copy(pos);
+        v.dir.copy(dir);
+        v.mesh.rotation.y = Math.atan2(-dir.z, dir.x);
+        v.speed = v.baseSpeed * 0.5;
     }
 
     createVehicleMesh(type, mat) {
@@ -251,21 +279,16 @@ export class TrafficManager {
         const mat = this.vehicleMats[Math.floor(Math.random()*this.vehicleMats.length)];
         
         const mesh = this.createVehicleMesh(type, mat);
-        const { pos, dir } = this.getRandomRoadPos(false);
-        
-        mesh.position.copy(pos);
-        
-        // Frente do veículo está no eixo +X, então a rotação correta é atan2(-dir.z, dir.x)
-        const angle = Math.atan2(-dir.z, dir.x);
-        mesh.rotation.y = angle;
-        
         this.scene.add(mesh);
         
-        this.vehicles.push({
+        const v = {
             mesh,
-            dir,
-            speed: 10 + Math.random() * 8
-        });
+            dir: new THREE.Vector3(),
+            baseSpeed: 10 + Math.random() * 8,
+            speed: 0
+        };
+        this.vehicles.push(v);
+        this.repositionVehicle(v);
     }
 
     createPedestrianMesh() {
@@ -311,15 +334,40 @@ export class TrafficManager {
     }
 
     update(delta) {
-        const bounds = 450;
+        const bounds = 240;
         
         this.vehicles.forEach(v => {
+            let targetSpeed = v.baseSpeed;
+            const SAFE_DIST = 12;
+            const LANE_WIDTH = 4.0;
+            
+            for (let i = 0; i < this.vehicles.length; i++) {
+                const other = this.vehicles[i];
+                if (other === v) continue;
+                
+                const dx = other.mesh.position.x - v.mesh.position.x;
+                const dz = other.mesh.position.z - v.mesh.position.z;
+                
+                const localX = dx * v.dir.x + dz * v.dir.z;
+                const localZ = dx * (-v.dir.z) + dz * v.dir.x;
+                
+                if (localX > 0 && localX < SAFE_DIST && Math.abs(localZ) < LANE_WIDTH) {
+                    targetSpeed = 0;
+                    break;
+                }
+            }
+            
+            if (targetSpeed === 0) {
+                v.speed = Math.max(0, v.speed - 35 * delta); 
+            } else {
+                v.speed = Math.min(v.baseSpeed, v.speed + 8 * delta); 
+            }
+            
             v.mesh.position.addScaledVector(v.dir, v.speed * delta);
             
-            if (v.dir.x > 0 && v.mesh.position.x > bounds) v.mesh.position.x = -bounds;
-            else if (v.dir.x < 0 && v.mesh.position.x < -bounds) v.mesh.position.x = bounds;
-            else if (v.dir.z > 0 && v.mesh.position.z > bounds) v.mesh.position.z = -bounds;
-            else if (v.dir.z < 0 && v.mesh.position.z < -bounds) v.mesh.position.z = bounds;
+            if (Math.abs(v.mesh.position.x) > bounds || Math.abs(v.mesh.position.z) > bounds) {
+                this.repositionVehicle(v);
+            }
         });
 
         this.pedestrians.forEach(p => {
