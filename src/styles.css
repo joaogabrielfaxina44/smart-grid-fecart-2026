@@ -80,7 +80,7 @@ body {
     top: 20px;
     right: 20px;
     width: 350px;
-    max-height: 85vh;
+    max-height: calc(100vh - 40px);
     background: rgba(10, 15, 30, 0.75);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -97,6 +97,7 @@ body {
     padding: 15px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+    flex-shrink: 0;
 }
 
 .panel-header h2 {
@@ -127,6 +128,9 @@ body {
 .panel-body-wrapper {
     display: grid;
     grid-template-rows: 1fr;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
     transition: grid-template-rows 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
@@ -138,21 +142,32 @@ body {
     transform: rotate(90deg);
 }
 
+#control-panel.collapsed .panel-content {
+    overflow: hidden;
+}
+
 .panel-content {
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 0 20px;
+    padding: 0 14px 0 20px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.4) rgba(255, 255, 255, 0.05);
 }
 
 .panel-content::-webkit-scrollbar {
-    width: 4px;
+    width: 6px;
 }
 .panel-content::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
 }
 .panel-content::-webkit-scrollbar-thumb {
     background: rgba(56, 189, 248, 0.4);
-    border-radius: 2px;
+    border-radius: 3px;
+}
+.panel-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(56, 189, 248, 0.7);
 }
 
 .panel-body-inner {
@@ -501,6 +516,8 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.4) rgba(255, 255, 255, 0.05);
 }
 
 /* Efeito Hover nas listas para ficar "Mais bonito e completo" */
@@ -525,6 +542,10 @@ body {
 .scrollable-list::-webkit-scrollbar-thumb {
     background: rgba(56, 189, 248, 0.4);
     border-radius: 2px;
+}
+.dash-content-wrapper::-webkit-scrollbar-thumb:hover,
+.scrollable-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(56, 189, 248, 0.7);
 }
 
 .dash-toggle {

@@ -199,7 +199,7 @@ document.addEventListener('visibilitychange', () => {
 // Controle de Rotação por Mouse / Pointer
 window.addEventListener('mousedown', (e) => {
     if (cameraMode !== 'fly') return;
-    if (e.target && e.target.closest('#control-panel, #toggle-panel-btn')) return;
+    if (e.target && e.target.closest('#control-panel, #toggle-panel-btn, #city-dashboard, .hud-pill, .dialog-box')) return;
 
     if (e.button === 0 || e.button === 2) {
         if (e.button === 2) e.preventDefault();
