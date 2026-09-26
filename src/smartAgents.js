@@ -544,7 +544,7 @@ export class PredictiveMaintAgent extends BaseAgent {
                 if ((this.historicoSobrecarga.get(keyNorm) ?? 0) > 0) {
                     this.historicoSobrecarga.set(keyNorm, 0);
                     logs.push(`[${this.nome}] ✅ Linha ${edge.origem}→${edge.destino} estabilizada`);
-                } else if (Math.random() < 0.04) {
+                } else if (Math.random() < 1 - Math.pow(0.96, (estado.deltaHoras ?? 0.25) / 0.25)) {
                     alertas.push({ aresta: keyNorm, taxa: taxaCarga, horas: 0, severidade: 'DESGASTE_EQUIPAMENTO' });
                     logs.push(`[${this.nome}] 🔧 MANUTENÇÃO PREDITIVA: Desgaste detectado na linha ${edge.origem}→${edge.destino}`);
                 }

@@ -1093,7 +1093,7 @@ function syncSceneWithBackend(grafo, estado, logs) {
     // ── 4. Processar logs da IA via novo sistema de notificações ──
     // (apenas para ticks automáticos de hora, não para cliques — esses têm sua
     //  própria sequência de notificações com delay dramático em triggerLineBreak)
-    if (logs && logs.length > 0) {
+    if (logs && logs.length > 0 && (!estado.deltaHoras || Math.floor(estado.hora * 12) % 12 === 0)) {
         notificationSystem.processLogs(logs, false);
     }
 }
