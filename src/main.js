@@ -11,6 +11,7 @@ import { ROAD_WIDTH, BLOCK_SIZE, ROAD_COORDS, BLOCK_CENTERS, WORLD_SIZE, createD
 import { createPowerGrid, createTransmissionLines } from './powerGridRenderer.js';
 import { energySources, updateEnergySources } from './powerSources.js';
 import { notificationSystem } from './notificationSystem.js';
+import { EnergyDashboard } from './energyDashboard.js';
 let poleManager, trafficManager, repairManager;
 
 const container = document.getElementById('canvas-container');
@@ -641,9 +642,11 @@ function setupUI() {
         dashMaxBtn.addEventListener('click', () => {
             dashPanel.classList.toggle('maximized');
             if(dashPanel.classList.contains('maximized')) {
-                dashMaxBtn.innerHTML = '🗗'; // icone de restaurar
+                dashMaxBtn.innerHTML = '⤢';
+                dashMaxBtn.setAttribute('aria-label', 'Restaurar painel'); // icone de restaurar
             } else {
-                dashMaxBtn.innerHTML = '⛶'; // icone de maximizar
+                dashMaxBtn.innerHTML = '⛶';
+                dashMaxBtn.setAttribute('aria-label', 'Expandir painel'); // icone de maximizar
             }
         });
     }
@@ -665,6 +668,7 @@ function setupUI() {
 
     btnToggleTime?.addEventListener('click', () => {
         isTimeRunning = !isTimeRunning;
+        energyDashboard.setSpeed(isTimeRunning ? timeSpeed / 0.08 : 0);
         if (isTimeRunning) {
             btnToggleTime.className = 'control-btn success';
             if (iconPause) iconPause.style.display = 'block';
@@ -685,7 +689,7 @@ function setupUI() {
         const proximaHora = (Math.floor(targetDecimalTime) + 1) % 24;
         targetDecimalTime = proximaHora;
         currentDecimalTime = proximaHora;
-        lastCheckedHour = proximaHora;
+        lastCheckedHour = Math.floor(proximaHora * 12);
         if (citySimulator?.estado) {
             citySimulator.estado.hora = proximaHora;
             citySimulator.tick(0);
@@ -710,7 +714,7 @@ function setupUI() {
     document.getElementById('btn-forcar-noite')?.addEventListener('click', () => {
         targetDecimalTime = 20.0;
         currentDecimalTime = 20.0;
-        lastCheckedHour = 20;
+        lastCheckedHour = 240;
         if (citySimulator?.estado) {
             citySimulator.estado.hora = 20;
             citySimulator.tick(0);
@@ -747,7 +751,8 @@ function setupUI() {
         console.log('[Painel] Resetando cidade...');
         targetDecimalTime = 7.0;
         currentDecimalTime = 7.0;
-        lastCheckedHour = 7;
+        lastCheckedHour = 84;
+        energyDashboard.clear();
         if (citySimulator) citySimulator.resetar();
         notificationSystem.show('success', 'Cidade Resetada', 'Rede elétrica restaurada ao estado inicial (07:00).', 4000);
     });
@@ -1083,198 +1088,7 @@ function syncSceneWithBackend(grafo, estado, logs) {
         }
     }
 
-    // ── 3. Atualizar Dashboard de Telemetria Avançado ──────────────
-    if (estado && estado.hora !== undefined) {
-        targetDecimalTime = estado.hora;
-    }
-    
-    // Status Global & Tempo
-    const dashTime = document.getElementById('dash-time');
-    const dashWeather = document.getElementById('dash-weather');
-    if (dashTime) {
-        const hh = Math.floor(estado.hora).toString().padStart(2, '0');
-        const mm = Math.floor((estado.hora % 1) * 60).toString().padStart(2, '0');
-        dashTime.textContent = `${hh}:${mm}`;
-    }
-    const weatherIcons = { 'ensolarado': '☀️', 'nublado': '☁️', 'chuvoso': '🌧️', 'tempestade': '⛈️' };
-    if (dashWeather) dashWeather.textContent = weatherIcons[estado.clima] || estado.clima;
-
-    // Métricas
-    const demandaAtual = grafo.demandaTotalKw();
-    const capacidadeMax = (typeof grafo.capacidadeTotalSubestacoes === 'function') ? grafo.capacidadeTotalSubestacoes() : 9000;
-    let geracaoRenovavel = 0;
-    
-    // Listas do DOM
-    const sourcesList = document.getElementById('dash-sources-list');
-    const distList = document.getElementById('dash-districts-list');
-    if (sourcesList) sourcesList.innerHTML = '';
-    if (distList) distList.innerHTML = '';
-
-    let blackouts = 0;
-    let sobrecargas = 0;
-
-    for (const node of grafo.nodes.values()) {
-        if (node.is_subestacao || node.tipo === 'Geração') {
-            // É Fonte
-            let capUsada = node.demanda_kw_atual;
-            let maxCap = node.capacidade_maxima_kw || Math.abs(node.demanda_base_kw);
-            let valText = node.is_subestacao ? `${maxCap} kW Disp.` : `${Math.abs(capUsada).toFixed(0)} kW Ger.`;
-            
-            if (node.tipo === 'Geração') geracaoRenovavel += Math.abs(capUsada);
-
-            const statusClass = node.status_energizado ? 'is-normal' : 'is-critical';
-            let icon = node.tipo === 'Geração' ? '☀️' : '🏭';
-            if (node.nome.includes('Eólica')) icon = '🎐';
-
-            const html = `<div class="list-item ${statusClass}">
-                            <div>
-                                <div class="item-name">${icon} ${node.nome}</div>
-                                <div class="item-sub">${node.tipo}</div>
-                            </div>
-                            <div class="item-val">${valText}</div>
-                          </div>`;
-            if (sourcesList) sourcesList.insertAdjacentHTML('beforeend', html);
-        } else {
-            // Consumidor (Bairro/Setor)
-            if (!node.status_energizado) blackouts++;
-            if (node.sobrecarga_ativa) sobrecargas++;
-
-            let statusClass = 'is-normal';
-            let statusText = `${Math.abs(node.demanda_kw_atual).toFixed(0)} kW`;
-            let statusBadge = '';
-            
-            if (!node.status_energizado) {
-                statusClass = 'is-critical';
-                statusText = 'OFFLINE';
-                statusBadge = '🔴';
-            } else if (node.sobrecarga_ativa) {
-                statusClass = 'is-warning';
-                statusBadge = '🟠';
-            } else {
-                statusBadge = '🟢';
-            }
-            
-            // Define o ícone com base no tipo
-            let icon = '🏘️';
-            if (node.tipo === 'Hospital') icon = '🏥';
-            if (node.tipo === 'Indústria') icon = '🏭';
-            if (node.tipo === 'Comercial' || node.tipo === 'Grandes Edifícios') icon = '🏢';
-            if (node.nome.includes('Educa')) icon = '🏫';
-            if (node.nome.includes('Data')) icon = '💻';
-
-            const html = `<div class="list-item ${statusClass}">
-                            <div>
-                                <div class="item-name">${icon} ${node.nome}</div>
-                                <div class="item-sub">Demanda Base: ${node.demanda_base_kw} kW</div>
-                            </div>
-                            <div class="item-val ${statusClass === 'is-critical' ? 'status-critical' : ''}">
-                                ${statusBadge} ${statusText}
-                            </div>
-                          </div>`;
-            if (distList) distList.insertAdjacentHTML('beforeend', html);
-        }
-    }
-
-    const totalGerado = capacidadeMax + geracaoRenovavel;
-    const pct = Math.min(100, Math.round((demandaAtual / totalGerado) * 100));
-
-    // Atualiza Textos do Gráfico
-    const elPct = document.getElementById('chart-pct');
-    const elDem = document.getElementById('dash-dem-val');
-    const elCap = document.getElementById('dash-cap-val');
-    if (elPct) {
-        elPct.textContent = `${pct}%`;
-        elPct.style.color = pct > 95 ? '#ef4444' : (pct > 85 ? '#f59e0b' : '#fff');
-    }
-    if (elDem) elDem.textContent = `${demandaAtual.toFixed(0)} kW`;
-    if (elCap) elCap.textContent = `${totalGerado.toFixed(0)} kW`;
-
-    // Gráfico Chart.js
-    if (window.Chart) {
-        const ctx = document.getElementById('powerChart');
-        if (ctx) {
-            if (!window.powerChartInst) {
-                window.powerChartInst = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Demanda', 'Livre'],
-                        datasets: [{
-                            data: [demandaAtual, Math.max(0, totalGerado - demandaAtual)],
-                            backgroundColor: ['#38bdf8', 'rgba(255,255,255,0.05)'],
-                            borderWidth: 0,
-                            cutout: '78%'
-                        }]
-                    },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        animation: { duration: 400 },
-                        plugins: { legend: { display: false }, tooltip: { enabled: false } }
-                    }
-                });
-            } else {
-                let color = '#38bdf8';
-                if (pct > 95) color = '#ef4444';
-                else if (pct > 85) color = '#f59e0b';
-                
-                window.powerChartInst.data.datasets[0].data = [demandaAtual, Math.max(0, totalGerado - demandaAtual)];
-                window.powerChartInst.data.datasets[0].backgroundColor[0] = color;
-                window.powerChartInst.update();
-            }
-        }
-    }
-
-    // Status Global
-    const dashStatus = document.getElementById('dash-status');
-    let hasContingency = false;
-    for (const edge of grafo.edges.values()) {
-        if (edge.is_contingencia) hasContingency = true;
-    }
-
-    if (dashStatus) {
-        if (blackouts > 0) {
-            dashStatus.innerHTML = '🔴 FALHA NA REDE';
-            dashStatus.className = 'dash-val status-critical';
-        } else if (hasContingency) {
-            dashStatus.innerHTML = '🔄 CONTINGÊNCIA';
-            dashStatus.className = 'dash-val status-healing';
-        } else if (sobrecargas > 0 || pct > 85) {
-            dashStatus.innerHTML = '🟠 SOBRECARGA';
-            dashStatus.className = 'dash-val status-warning';
-        } else {
-            dashStatus.innerHTML = '🟢 NORMAL';
-            dashStatus.className = 'dash-val status-normal';
-        }
-    }
-
-    // Terminal IA e Pílulas
-    const agentsList = document.getElementById('dash-ai-agents');
-    const termText = document.getElementById('ai-terminal-text');
-    if (agentsList && logs) {
-        const activeAgents = new Set(['Monitoramento']);
-        for (const log of logs) {
-            if (log.includes('Pico Noturno')) activeAgents.add('Peak Hour Agent');
-            if (log.includes('CORTE DE EMERGÊNCIA') || log.includes('Restaurando')) activeAgents.add('Demand Response');
-            if (log.includes('SUPERAQUECIMENTO') || log.includes('estabilizada')) activeAgents.add('Predictive Maint');
-            if (log.includes('Self-Healing') || log.includes('Rota') || log.includes('Blackout')) activeAgents.add('Self-Healing');
-            if (log.includes('Iluminação')) activeAgents.add('Smart Lighting');
-        }
-
-        agentsList.innerHTML = '';
-        activeAgents.forEach(ag => {
-            const pill = document.createElement('span');
-            pill.className = ag === 'Monitoramento' ? 'ai-agent-pill normal' : 'ai-agent-pill active';
-            pill.textContent = ag;
-            agentsList.appendChild(pill);
-        });
-
-        if (logs.length > 0 && termText) {
-            // Filtrar log mais relevante
-            const lastLog = logs[logs.length - 1];
-            termText.textContent = lastLog.replace(/\[.*?\] /, ''); // Remove o [AgentName]
-        } else if (termText && (!termText.textContent || termText.textContent.includes('Aguardando'))) {
-            termText.textContent = "Sistema estável. Aguardando eventos...";
-        }
-    }
+    energyDashboard.update(grafo, estado);
 
     // ── 4. Processar logs da IA via novo sistema de notificações ──
     // (apenas para ticks automáticos de hora, não para cliques — esses têm sua
@@ -1290,6 +1104,33 @@ function atualizarPainelHUD() {
     }
 }
 
+
+const energyDashboard = new EnergyDashboard({
+    onTime: hour => {
+        targetDecimalTime = currentDecimalTime = hour;
+        lastCheckedHour = Math.floor(hour * 12);
+        citySimulator.estado.hora = hour;
+        citySimulator.tick(0);
+    },
+    onWeather: weather => citySimulator.alterarClima(weather),
+    onSpeed: speed => {
+        isTimeRunning = speed > 0;
+        if (speed > 0) timeSpeed = 0.08 * speed;
+        const label = document.getElementById('time-toggle-text');
+        if (label) label.textContent = isTimeRunning ? 'Pausar Tempo (Travar)' : 'Destravar Tempo (Rodar)';
+        document.getElementById('icon-time-pause').style.display = isTimeRunning ? 'block' : 'none';
+        document.getElementById('icon-time-play').style.display = isTimeRunning ? 'none' : 'block';
+    },
+    onFocus: id => {
+        const point = backendNodePositions[id];
+        if (!point) return;
+        setCameraMode('fly');
+        const pos = point.clone().add(new THREE.Vector3(45, 55, 65));
+        const view = new THREE.PerspectiveCamera(); view.position.copy(pos); view.lookAt(point);
+        const angles = new THREE.Euler().setFromQuaternion(view.quaternion, 'YXZ');
+        smoothGlideToImpl(pos, angles.x, angles.y);
+    }
+});
 
 // ── Instanciação do Simulador ─────────────────────────────────
 const citySimulator = new CitySimulator({ onSync: syncSceneWithBackend });
@@ -1423,7 +1264,7 @@ const hemiDuskGround = new THREE.Color(0x381907);
 const hemiNightTop   = new THREE.Color(0x0e182e);
 const hemiNightGround= new THREE.Color(0x050a12);
 
-let lastCheckedHour = 7;
+let lastCheckedHour = 84;
 
 function updateSmoothDayNightCycle(delta) {
     if (isTimeRunning) {
@@ -1450,11 +1291,13 @@ function updateSmoothDayNightCycle(delta) {
     }
 
     // Sincroniza estado dos agentes quando a hora inteira muda
-    if (hInt !== lastCheckedHour) {
-        lastCheckedHour = hInt;
+    energyDashboard.clock(h);
+    const sampleBucket = Math.floor(h * 12);
+    if (sampleBucket !== lastCheckedHour) {
+        lastCheckedHour = sampleBucket;
         if (typeof citySimulator !== 'undefined' && citySimulator.estado) {
-            citySimulator.estado.hora = hInt;
-            citySimulator.tick(0);
+            citySimulator.estado.hora = h;
+            citySimulator.tick(0, 1 / 12);
         }
     }
 

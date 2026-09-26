@@ -425,6 +425,21 @@ export class PeakHourAgent extends BaseAgent {
             periodo = 'Noite';
         }
 
+        const anchors = [
+            [0, [.60,.60,.60,.75,.90,.70]], [5,[.60,.60,.60,.75,.90,.70]],
+            [7,[.85,.70,.70,.90,1,.80]], [10,[.80,1.20,1.20,1.15,1,1.10]],
+            [16,[.80,1.20,1.20,1.15,1,1.10]], [19,[1.80,.80,.80,.90,1.10,.85]],
+            [21,[1.80,.80,.80,.90,1.10,.85]], [23,[1.10,.75,.75,.70,.95,.80]],
+            [24,[.60,.60,.60,.75,.90,.70]]
+        ];
+        const types = ['Residencial','Comercial','Grandes Edifícios','Indústria','Hospital','Público'];
+        const right = anchors.findIndex(a => a[0] > hora);
+        if (right > 0) {
+            const a = anchors[right-1], b = anchors[right];
+            const t = (hora-a[0])/(b[0]-a[0]);
+            types.forEach((type,i) => fatores[type] = a[1][i] + (b[1][i]-a[1][i])*t);
+        }
+
         for (const node of grafo.nodes.values()) {
             if (node.is_subestacao || node.tipo === 'Geração') continue;
             const fator = fatores[node.tipo] ?? 1.0;
@@ -518,7 +533,7 @@ export class PredictiveMaintAgent extends BaseAgent {
             const taxaCarga = edge.fluxo_kw_atual / Math.max(edge.capacidade_maxima_kw, 1);
 
             if (taxaCarga >= 0.75) {
-                const horasAcum = (this.historicoSobrecarga.get(keyNorm) ?? 0) + 0.25;
+                const horasAcum = (this.historicoSobrecarga.get(keyNorm) ?? 0) + (estado.deltaHoras ?? 0.25);
                 this.historicoSobrecarga.set(keyNorm, horasAcum);
 
                 if (horasAcum >= 0.25) { // 1 único tick (15 min virtuais)
@@ -581,7 +596,7 @@ export class DemandResponseAgent extends BaseAgent {
                     if (node) node.em_corte_emergencia = false;
                     continue; 
                 }
-                this.cortesAtivos.set(nodeId, Math.min(1.0, mult + 0.05));
+                this.cortesAtivos.set(nodeId, Math.min(1.0, mult + 0.05 * (estado.deltaHoras ?? 0.25) / 0.25));
             }
             this._aplicarCortes(grafo);
             if (this.cortesAtivos.size > 0) {
@@ -705,23 +720,16 @@ export class SmartLightingAgent extends BaseAgent {
         const logs = [];
         const deveAcender = hora >= 18 || hora < 6 || clima === 'tempestade';
 
-        if (deveAcender && !this.iluminacaoLigada) {
-            this.iluminacaoLigada = true;
+        if (deveAcender !== this.iluminacaoLigada) {
+            logs.push(`[${this.nome}] Iluminação pública ${deveAcender ? 'LIGADA' : 'DESLIGADA'}`);
+        }
+        this.iluminacaoLigada = deveAcender;
+        if (deveAcender) {
             for (const node of grafo.nodes.values()) {
-                if (!node.is_subestacao && node.tipo !== 'Geração') {
+                if (!node.is_subestacao && node.tipo !== 'Geração' && node.status_energizado) {
                     node.demanda_kw_atual += node.demanda_base_kw * 0.03;
                 }
             }
-            logs.push(`[${this.nome}] 💡 Iluminação pública LIGADA`);
-
-        } else if (!deveAcender && this.iluminacaoLigada) {
-            this.iluminacaoLigada = false;
-            for (const node of grafo.nodes.values()) {
-                if (!node.is_subestacao && node.tipo !== 'Geração') {
-                    node.demanda_kw_atual = Math.max(0, node.demanda_kw_atual - node.demanda_base_kw * 0.03);
-                }
-            }
-            logs.push(`[${this.nome}] 🌑 Iluminação pública DESLIGADA`);
         }
 
         return logs;
@@ -773,7 +781,8 @@ export class CitySimulator {
     // ── API Pública ─────────────────────────────────────────────
 
     /** Avança o relógio em `horas` e executa todos os agentes */
-    tick(horas = 1) {
+    tick(horas = 1, deltaHoras = horas) {
+        this.estado.deltaHoras = Math.max(0, deltaHoras);
         this.estado.hora = (this.estado.hora + horas) % 24;
         this._atualizarLuminosidade();
         return this._executarAgentes();
@@ -783,6 +792,7 @@ export class CitySimulator {
     simularFalha(origemId, destinoId) {
         this.grafo.desativarAresta(origemId, destinoId);
         // Ticks instantâneos sem avançar o relógio
+        this.estado.deltaHoras = 0;
         return this._executarAgentes();
     }
 
@@ -803,6 +813,8 @@ export class CitySimulator {
     /** Altera o clima e reaplicar a lógica */
     alterarClima(novoClima) {
         this.estado.clima = novoClima;
+        this.estado.deltaHoras = 0;
+        this._atualizarLuminosidade();
         return this._executarAgentes();
     }
 
@@ -815,6 +827,9 @@ export class CitySimulator {
         this.estado.alertasManutencao = [];
         this._demandResponseAgent?.resetar();
         this._lightingAgent?.resetar();
+        this.estado.deltaHoras = 0;
+        this._atualizarLuminosidade();
+        this.agentes.find(a => a instanceof PredictiveMaintAgent)?.historicoSobrecarga.clear();
         const logs = this._executarAgentes();
         return logs;
     }
@@ -863,6 +878,8 @@ export class CitySimulator {
             const logs = agente.executar(this.grafo, this.estado);
             todosLogs.push(...logs);
         }
+
+        this.grafo.calcularFluxoArestas();
 
         // Dispara o callback de sincronização visual
         if (typeof this.onSync === 'function') {
