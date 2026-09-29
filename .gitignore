@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Local visual-test outputs and optional copies of the existing Three.js CDN modules.
+/scratch/finale-*.png
+/scratch/three.module.js
+/scratch/OrbitControls.js

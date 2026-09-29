@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CitySimulator, peakHourAgent, demandResponseAgent } from './smartAgents.js';
 import { VFXManager } from './vfx.js';
+import { CityExplosion } from './cityExplosion.js';
 import { StorytellingTour } from './storytelling.js';
 import { PoleManager, TrafficManager, RepairManager } from './cityEntities.js';
 import { materials, powerMats, groundLightPoolMaterial } from './sharedAssets.js';
@@ -25,6 +26,9 @@ let timeSpeed = 0.08; // 1 hora virtual a cada ~12.5s (minutos avançam continua
 export let globalNightFactor = 0.0;
 
 const scene = new THREE.Scene();
+const cityExplosion = new CityExplosion(scene);
+let finaleTour = null;
+let finaleCameraState = null;
 const vfxManager = new VFXManager(scene);
 const skyColorDay = new THREE.Color(0xbfd3e6);
 scene.background = skyColorDay.clone();
@@ -161,12 +165,9 @@ function updateKey(code, key, isPressed) {
 
 // Listeners de Teclado no modo capture para nunca perder soltura de teclas
 window.addEventListener('keydown', (e) => {
-    // Tecla 'U' aciona a Explosão Nuclear globalmente
-    if (e.key.toLowerCase() === 'u') {
-        if (vfxManager) {
-            console.log('[☢️] EXPLOSÃO NUCLEAR INICIADA!');
-            vfxManager.triggerNuclearExplosion(new THREE.Vector3(0, 0, 0));
-        }
+    if (e.target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (e.code === 'KeyU' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        startFinale();
         return;
     }
 
@@ -200,7 +201,7 @@ document.addEventListener('visibilitychange', () => {
 // Controle de Rotação por Mouse / Pointer
 window.addEventListener('mousedown', (e) => {
     if (cameraMode !== 'fly') return;
-    if (e.target && e.target.closest('#control-panel, #toggle-panel-btn, #city-dashboard, .hud-pill, .dialog-box')) return;
+    if (e.target && e.target.closest('#control-panel, #toggle-panel-btn, #city-dashboard, #finale-controls, #finale-tribute, .hud-pill, .dialog-box')) return;
 
     if (e.button === 0 || e.button === 2) {
         if (e.button === 2) e.preventDefault();
@@ -287,6 +288,7 @@ function setupHover() {
     wireTooltipNameEl = document.getElementById('wire-tooltip-name');
 
     renderer.domElement.addEventListener('mousemove', (event) => {
+        if (cityExplosion.active) return;
         if (isDraggingMouse) {
             if (hoveredTransmissionLine) {
                 hoveredTransmissionLine = null;
@@ -357,6 +359,7 @@ function setupRaycaster() {
     setupHover();
 
     renderer.domElement.addEventListener('click', (event) => {
+        if (cityExplosion.active) return;
         if (mouseMovedDistance > 8) return;
 
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -748,6 +751,7 @@ function setupUI() {
 
     // 5. Botão: Resetar Cidade
     document.getElementById('btn-reset')?.addEventListener('click', () => {
+        resetFinale();
         console.log('[Painel] Resetando cidade...');
         targetDecimalTime = 7.0;
         currentDecimalTime = 7.0;
@@ -760,6 +764,7 @@ function setupUI() {
     // 6. Tour Guiada
     const hudAlertContainer = document.getElementById('hud-alert-container');
     const tour = new StorytellingTour(camera, citySimulator, hudAlertContainer);
+    finaleTour = tour;
     document.getElementById('btn-iniciar-tour')?.addEventListener('click', () => {
         tour.start();
         setCameraMode('fly'); // Garante que a câmera aceita Glide
@@ -972,6 +977,7 @@ const ID_MAP = {
 };
 
 function syncSceneWithBackend(grafo, estado, logs) {
+    if (cityExplosion.active) return;
     if (logs && logs.length > 0) {
         console.groupCollapsed(`[SmartGrid] Tick ${estado.hora}h — ${logs.length} ação(ões)`);
         logs.forEach(l => console.log(l));
@@ -1149,6 +1155,75 @@ const forwardVector = new THREE.Vector3();
 const rightVector = new THREE.Vector3();
 const moveDirection = new THREE.Vector3();
 
+function startFinale() {
+    if (cityExplosion.active) {
+        showFinaleTribute();
+        return;
+    }
+    finaleTour?.stop();
+    finaleCameraState = { position: camera.position.clone(), quaternion: camera.quaternion.clone(),
+        mode: cameraMode, target: orbitControls.target.clone() };
+    isGliding = false;
+    resetKeys();
+    setCameraMode('orbit');
+    camera.position.set(395, 300, 460);
+    orbitControls.target.set(0, 30, 0);
+    camera.lookAt(orbitControls.target);
+    orbitControls.update();
+    cityExplosion.trigger();
+    document.body.classList.add('finale-active');
+    document.getElementById('btn-finale').disabled = true;
+    document.getElementById('btn-rebuild').hidden = false;
+    document.getElementById('btn-tribute').hidden = false;
+    document.getElementById('finale-status').textContent = 'Impacto no centro · onda de choque em expansão';
+    document.getElementById('pole-ui-panel')?.style.setProperty('display', 'none');
+    if (wireTooltipEl) wireTooltipEl.style.display = 'none';
+    activePole = null;
+    showFinaleTribute();
+}
+
+function resetFinale() {
+    if (!cityExplosion.active) return;
+    document.getElementById('finale-tribute').close();
+    cityExplosion.reset();
+    document.body.classList.remove('finale-active');
+    document.getElementById('btn-finale').disabled = false;
+    document.getElementById('btn-rebuild').hidden = true;
+    document.getElementById('btn-tribute').hidden = true;
+    document.getElementById('finale-status').textContent = 'FECART 2026 · um último espetáculo';
+    if (finaleCameraState) {
+        camera.position.copy(finaleCameraState.position);
+        camera.quaternion.copy(finaleCameraState.quaternion);
+        setCameraMode(finaleCameraState.mode);
+        orbitControls.target.copy(finaleCameraState.target);
+        finaleCameraState = null;
+    }
+    resetKeys();
+}
+
+function showFinaleTribute() {
+    const tribute = document.getElementById('finale-tribute');
+    if (!tribute.open) {
+        tribute.showModal();
+        tribute.scrollTop = 0;
+    }
+}
+
+document.getElementById('btn-tribute').addEventListener('click', showFinaleTribute);
+for (const id of ['btn-close-tribute', 'btn-watch-finale']) {
+    document.getElementById(id).addEventListener('click', () => document.getElementById('finale-tribute').close());
+}
+document.getElementById('finale-tribute').addEventListener('close', () => {
+    if (cityExplosion.active) document.getElementById('btn-tribute').focus({ preventScroll: true });
+});
+
+document.getElementById('btn-finale').addEventListener('click', startFinale);
+document.getElementById('btn-rebuild').addEventListener('click', resetFinale);
+document.getElementById('finale-sound').addEventListener('change', event => {
+    if (!event.target.checked && cityExplosion.audio) cityExplosion.audio.suspend().catch(() => {});
+    else if (cityExplosion.audio) cityExplosion.audio.resume().catch(() => {});
+});
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -1156,12 +1231,14 @@ function animate() {
     const delta = Math.min(0.08, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
+    if (!cityExplosion.active) {
     updateEnergySources(delta, globalNightFactor, citySimulator.grafo, citySimulator.estado, vfxManager);
 
     if (poleManager) poleManager.update(delta, now/1000, camera.position, globalNightFactor, trafficManager ? trafficManager.vehicles : [], trafficManager ? trafficManager.pedestrians : []);
     if (trafficManager) trafficManager.update(delta);
     if (repairManager) repairManager.update(delta, now/1000);
     if (activePole) updatePoleUI();
+    }
 
     if (cameraMode === 'fly') {
         const rotFactor = 1 - Math.exp(-22 * delta);
@@ -1238,15 +1315,24 @@ function animate() {
     if (powerMats.wireHealing) powerMats.wireHealing.opacity = 0.75 + Math.sin(now * 0.007) * 0.25;
 
     // Atualização fluida e contínua do Ciclo Dia/Noite & Minutos
-    updateSmoothDayNightCycle(delta);
+    if (!cityExplosion.active) updateSmoothDayNightCycle(delta);
 
     // VFX update (retorna camera shake offset)
     const shakeOffset = vfxManager.update(delta, camera);
+    const blastOffset = cityExplosion.update(delta, camera);
+    if (cityExplosion.active && cityExplosion.age > 8) {
+        const status = document.getElementById('finale-status');
+        const text = 'Cidade em ruínas · arraste para explorar';
+        if (status.textContent !== text) status.textContent = text;
+    }
     if (shakeOffset && (shakeOffset.x !== 0 || shakeOffset.y !== 0 || shakeOffset.z !== 0)) {
         camera.position.add(shakeOffset);
     }
 
+    camera.position.add(blastOffset);
     renderer.render(scene, camera);
+    camera.position.sub(blastOffset);
+    if (shakeOffset) camera.position.sub(shakeOffset);
 }
 
 // ── Sistema de Transição Suave do Dia/Noite, Minutos & Iluminação Urbana ────

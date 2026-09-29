@@ -92,6 +92,36 @@
 </head>
 <body>
     <div id="canvas-container"></div>
+    <section id="finale-controls" aria-label="Espetáculo final">
+        <div id="finale-status" role="status">FECART 2026 · um último espetáculo</div>
+        <div class="finale-actions">
+            <button id="btn-finale" type="button" title="Atalho: U">Detonar a cidade <kbd>U</kbd></button>
+            <button id="btn-rebuild" type="button" hidden>Reconstruir cidade</button>
+            <button id="btn-tribute" type="button" hidden>Ler homenagem ♡</button>
+            <label class="finale-audio"><input id="finale-sound" type="checkbox" checked> Som</label>
+        </div>
+    </section>
+    <div id="finale-flash" aria-hidden="true"></div>
+    <dialog id="finale-tribute" aria-labelledby="tribute-title" aria-describedby="tribute-letter">
+        <div class="tribute-card">
+            <button id="btn-close-tribute" class="tribute-close" type="button" aria-label="Fechar homenagem" autofocus>×</button>
+            <div class="tribute-sparkles" aria-hidden="true"><span>✧</span><span>♡</span><span>✦</span><span>♡</span><span>✧</span></div>
+            <p class="tribute-eyebrow">FECART 2026 · conseguimos!</p>
+            <div class="tribute-heart" aria-hidden="true">♡</div>
+            <h2 id="tribute-title">Parabéns,<br><em>nosso trio!</em></h2>
+            <div class="tribute-names" aria-label="Nosso trio">
+                <span>João Gabriel</span><span>Arthur Tuccio</span><span>Caroline Kaori</span>
+            </div>
+            <p class="tribute-intro">A gente acendeu uma cidade.<br>E fez uma ideia brilhar de verdade.</p>
+            <div id="tribute-letter" class="tribute-letter">
+                <p>A FECART foi um sucesso, e cada elogio tem um pouquinho de nós três: da nossa criatividade, do nosso cuidado e de todo o esforço para fazer acontecer.</p>
+                <p>Arthur e Caroline, obrigado pela dedicação, pela parceria e por construírem isso comigo. Esse último espetáculo é um presentinho para agradecer a vocês por tudo. <span aria-hidden="true">♥</span></p>
+            </div>
+            <p class="tribute-signature">Com carinho,<strong>João Gabriel</strong></p>
+            <p class="tribute-keepsake">A cidade pode voar pelos ares.<br>Essa conquista fica com a gente. ♡</p>
+            <button id="btn-watch-finale" class="tribute-watch" type="button">Agora, vamos ver o espetáculo <span aria-hidden="true">✧</span></button>
+        </div>
+    </dialog>
     
     <div id="ui-layer">
         <!-- Control Panel -->
